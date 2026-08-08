@@ -1,0 +1,6 @@
+{
+  "name": "Sahil's AI Resume Chatbot - Windows 11",
+  "description": "An interactive Windows 11 desktop experience allowing recruiters to chat with Sahil's AI representative, view profile details, evaluate job matches, and download resume.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
