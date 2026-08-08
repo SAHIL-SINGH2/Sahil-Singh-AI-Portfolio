@@ -8,6 +8,10 @@
       "destination": "/api"
     },
     {
+      "source": "/chat",
+      "destination": "/api"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

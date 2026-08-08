@@ -1010,7 +1010,7 @@ app.get('/api/candidate-info', async (req: Request, res: Response) => {
 });
 
 // 3. Chat Endpoint (Compatible with uploaded FastAPI POST /chat body {"question": "..."})
-app.post('/chat', async (req: Request, res: Response) => {
+app.post(['/chat', '/api/chat'], async (req: Request, res: Response) => {
   const { question, stream, fastApiUrl } = req.body;
 
   if (!question || typeof question !== 'string') {
@@ -1130,12 +1130,6 @@ app.post('/chat', async (req: Request, res: Response) => {
   }
 
   res.json({ answer });
-});
-
-// Also support /api/chat route alias
-app.post('/api/chat', (req, res) => {
-  // Forward to /chat logic
-  app._router.handle(req, res, () => {});
 });
 
 // 4. Job Match Analysis Endpoint (Supports text Job Description)

@@ -41,7 +41,7 @@ export class ApiService {
 
     // Use user-provided FastAPI URL or fallback to current origin
     const baseUrl = fastApiUrl ? fastApiUrl.replace(/\/$/, '') : '';
-    const endpoint = baseUrl ? `${baseUrl}/chat` : '/chat';
+    const endpoint = baseUrl ? `${baseUrl}/chat` : '/api/chat';
 
     try {
       const response = await fetch(endpoint, {
