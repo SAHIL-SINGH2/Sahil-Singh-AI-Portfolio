@@ -6,6 +6,7 @@ import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import * as pdfParseModule from 'pdf-parse';
 import { sahilProfile } from './frontend/src/data/candidateData.js';
+import { CandidateProfile } from './frontend/src/types.js';
 
 dotenv.config();
 
@@ -15,7 +16,7 @@ const PORT = 3000;
 app.use(express.json({ limit: '10mb' }));
 
 // Active candidate profile (defaults to sahilProfile, updated if candidate PDFs are detected)
-let activeCandidateProfile = { ...sahilProfile };
+let activeCandidateProfile: CandidateProfile = { ...sahilProfile };
 let lastParsedPdfSignature = '';
 
 // Helper to initialize Gemini lazily

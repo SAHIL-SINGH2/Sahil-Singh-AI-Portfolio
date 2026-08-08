@@ -74,6 +74,7 @@ export interface CandidateProfile {
   education: EducationItem[];
   achievements: string[];
   personalDetails?: string;
+  resumeRawText?: string;
 }
 
 export interface JobMatchRequest {
