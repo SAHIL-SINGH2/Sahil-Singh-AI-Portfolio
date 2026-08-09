@@ -11,7 +11,6 @@ import path from "path";
 import fs from "fs";
 import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
-import * as pdfParseModule from "pdf-parse";
 
 // frontend/src/data/candidateData.ts
 var sahilProfile = {
@@ -142,7 +141,36 @@ function getGeminiClient() {
   });
 }
 async function extractTextFromPdfBuffer(pdfBuffer) {
+  if (typeof globalThis.DOMMatrix === "undefined") {
+    globalThis.DOMMatrix = class DOMMatrix {
+      constructor(init) {
+        this.a = 1;
+        this.b = 0;
+        this.c = 0;
+        this.d = 1;
+        this.e = 0;
+        this.f = 0;
+        if (Array.isArray(init) && init.length >= 6) {
+          this.a = init[0];
+          this.b = init[1];
+          this.c = init[2];
+          this.d = init[3];
+          this.e = init[4];
+          this.f = init[5];
+        }
+      }
+    };
+  }
+  if (typeof globalThis.ImageData === "undefined") {
+    globalThis.ImageData = class ImageData {
+    };
+  }
+  if (typeof globalThis.Path2D === "undefined") {
+    globalThis.Path2D = class Path2D {
+    };
+  }
   try {
+    const pdfParseModule = await import("pdf-parse");
     const mod = pdfParseModule;
     const PDFParseClass = mod.PDFParse || mod.default?.PDFParse;
     if (typeof PDFParseClass === "function") {
@@ -154,10 +182,6 @@ async function extractTextFromPdfBuffer(pdfBuffer) {
         }
       }
     }
-  } catch (e) {
-  }
-  try {
-    const mod = pdfParseModule;
     const fn = typeof mod === "function" ? mod : mod.default;
     if (typeof fn === "function") {
       const res = await fn(pdfBuffer);

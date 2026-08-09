@@ -3,7 +3,6 @@ import path from 'path';
 import fs from 'fs';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
-import * as pdfParseModule from 'pdf-parse';
 import { sahilProfile } from './frontend/src/data/candidateData.js';
 import { CandidateProfile } from './frontend/src/types.js';
 
@@ -36,8 +35,27 @@ function getGeminiClient(): GoogleGenAI | null {
 
 // Universal PDF text extractor compatible with pdf-parse v1, v2 (PDFParse class), and raw fallback
 async function extractTextFromPdfBuffer(pdfBuffer: Buffer): Promise<string> {
-  // 1. Try pdf-parse v2 (PDFParse class export)
+  // Polyfill DOMMatrix / ImageData / Path2D globals for node serverless env if pdfjs-dist requires them
+  if (typeof globalThis.DOMMatrix === 'undefined') {
+    (globalThis as any).DOMMatrix = class DOMMatrix {
+      a = 1; b = 0; c = 0; d = 1; e = 0; f = 0;
+      constructor(init?: any) {
+        if (Array.isArray(init) && init.length >= 6) {
+          this.a = init[0]; this.b = init[1]; this.c = init[2]; this.d = init[3]; this.e = init[4]; this.f = init[5];
+        }
+      }
+    };
+  }
+  if (typeof globalThis.ImageData === 'undefined') {
+    (globalThis as any).ImageData = class ImageData {};
+  }
+  if (typeof globalThis.Path2D === 'undefined') {
+    (globalThis as any).Path2D = class Path2D {};
+  }
+
+  // 1. Try dynamic import of pdf-parse
   try {
+    const pdfParseModule = await import('pdf-parse');
     const mod = pdfParseModule as any;
     const PDFParseClass = mod.PDFParse || mod.default?.PDFParse;
     if (typeof PDFParseClass === 'function') {
@@ -49,13 +67,6 @@ async function extractTextFromPdfBuffer(pdfBuffer: Buffer): Promise<string> {
         }
       }
     }
-  } catch (e) {
-    // try next strategy
-  }
-
-  // 2. Try pdf-parse v1 (function export)
-  try {
-    const mod = pdfParseModule as any;
     const fn = typeof mod === 'function' ? mod : mod.default;
     if (typeof fn === 'function') {
       const res = await fn(pdfBuffer);
@@ -67,7 +78,7 @@ async function extractTextFromPdfBuffer(pdfBuffer: Buffer): Promise<string> {
     // try next strategy
   }
 
-  // 3. Try dynamic require if available
+  // 2. Try dynamic require if available
   try {
     const req = typeof require !== 'undefined' ? require : null;
     if (req) {
@@ -85,7 +96,7 @@ async function extractTextFromPdfBuffer(pdfBuffer: Buffer): Promise<string> {
     // try fallback
   }
 
-  // 4. Raw text extraction from PDF streams as last resort
+  // 3. Raw text extraction from PDF streams as last resort
   try {
     const str = pdfBuffer.toString('latin1');
     const textMatches: string[] = [];
