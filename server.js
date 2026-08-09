@@ -23,7 +23,7 @@ var sahilProfile = {
   linkedin: "https://www.linkedin.com/in/sahil-singh2/",
   portfolio: "https://sahilsingh.dev",
   avatarUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400",
-  totalExperienceYears: 2.5,
+  totalExperienceYears: 0,
   bio: "AI/ML and Computer Engineering undergraduate with hands-on experience building full-stack AI applications using React, TypeScript, FastAPI, LangChain, LangGraph, and PostgreSQL. Skilled in developing LLM-powered workflows, intelligent automation, and RESTful APIs with a strong foundation in data structures, algorithms, and software development. Built AI solutions for document processing, complaint management, and productivity automation using Groq Llama, Google Gemini, and SQLAlchemy. Passionate about solving real-world problems through scalable AI systems, modern web technologies, and clean, maintainable code.\n\nI am a curious and passionate Computer Science student who enjoys learning new technologies and challenging myself through practical projects. I have a strong interest in web development and Artificial Intelligence, and I like exploring how technology can solve real-world problems. I believe in learning by doing, whether it's building applications, earning certifications, or participating in technical activities. I am always eager to improve my skills, adapt to new tools, and grow both personally and technically. My goal is to keep learning, collaborate with others, and create meaningful solutions that make a positive impact.",
   personalDetails: "Aligarh, Uttar Pradesh, India | sahilsinghjadaun4@gmail.com | +91-8218534932",
   skills: {
@@ -33,36 +33,15 @@ var sahilProfile = {
     databases: ["PostgreSQL", "MongoDB", "Redis", "SQLite"],
     tools: ["Docker", "Git / GitHub", "Linux / Bash", "Postman", "Vercel", "Cloud Run", "AWS S3"]
   },
-  experiences: [
-    {
-      id: "exp-1",
-      company: "TechVentures AI",
-      role: "AI & Full-Stack Engineer Intern",
-      duration: "Jan 2024 \u2013 Present",
-      location: "San Francisco, CA",
-      type: "Internship",
-      description: "Designed and implemented production-grade LLM applications, FastAPI backends, and responsive React dashboards for enterprise clients.",
-      skillsUsed: ["Python", "FastAPI", "Groq API", "React", "TypeScript", "LangChain", "Docker"]
-    },
-    {
-      id: "exp-2",
-      company: "CodeCraft Solutions",
-      role: "Software Engineering Intern",
-      duration: "Jun 2023 \u2013 Dec 2023",
-      location: "Remote",
-      type: "Internship",
-      description: "Developed interactive frontend components in React, optimized REST API response times by 35% using Redis caching, and built custom analytics web hooks.",
-      skillsUsed: ["React", "JavaScript", "Node.js", "Express", "PostgreSQL", "Tailwind CSS"]
-    }
-  ],
+  experiences: [],
   projects: [
     {
       id: "proj-1",
       title: "AI Resume & Portfolio Chatbot (Windows 11 UI)",
       description: "A Fluent Windows 11 desktop experience allowing recruiters to interview an AI twin of Sahil. Features real-time streaming, Job Description matcher, interactive PDF resume generation, and profile analytics.",
       techStack: ["React 19", "TypeScript", "FastAPI", "Groq API", "Gemini API", "Express", "CSS Glassmorphism"],
-      githubUrl: "https://github.com/sahilsingh-dev/ai-resume-windows11",
-      liveUrl: "https://sahil-ai-resume.app",
+      githubUrl: "https://github.com/SAHIL-SINGH2",
+      liveUrl: "",
       category: "AI & Full-Stack",
       highlights: [
         "Built Windows 11 Fluent UI theme with mica glassmorphism and custom desktop window management.",
@@ -75,47 +54,49 @@ var sahilProfile = {
       title: "RAG Document Intelligence Engine",
       description: "Enterprise Retrieval-Augmented Generation platform that indexes complex PDFs, extracts tables/diagrams, and answers natural language queries with verified citations.",
       techStack: ["Python", "FastAPI", "LangChain", "Qdrant", "PyPDF", "React", "Docker"],
-      githubUrl: "https://github.com/sahilsingh-dev/rag-document-ai",
+      githubUrl: "https://github.com/SAHIL-SINGH2",
+      liveUrl: "",
       category: "AI / ML",
       highlights: [
-        "Ingests thousands of multi-page PDF documents in under 10 seconds using parallel chunking.",
-        "Sub-200ms vector search querying with high contextual accuracy.",
-        "Created an interactive React document viewer with inline highlight citations."
+        "Ingests multi-page PDF documents and chunks text for high contextual search accuracy.",
+        "Sub-200ms vector search querying with Groq / Gemini LLMs.",
+        "Created an interactive React document viewer with inline citations."
       ]
     },
     {
       id: "proj-3",
-      title: "Real-time Collaborative Code Workspace",
-      description: "A web-based IDE featuring real-time pair programming, operational transformation, syntax checking, and AI-assisted inline code autocompletion.",
-      techStack: ["React", "Node.js", "WebSockets", "Monaco Editor", "Express", "Docker"],
-      githubUrl: "https://github.com/sahilsingh-dev/collab-code-workspace",
-      category: "Full-Stack Web",
+      title: "AI Document Processing & Complaint Management System",
+      description: "Automated document workflow and complaint triage engine using Python, FastAPI, Groq Llama, Google Gemini, and SQLAlchemy to process user tickets and extract structured insights.",
+      techStack: ["Python", "FastAPI", "SQLAlchemy", "PostgreSQL", "Groq Llama", "Google Gemini", "React"],
+      githubUrl: "https://github.com/SAHIL-SINGH2",
+      liveUrl: "",
+      category: "AI & Full-Stack",
       highlights: [
-        "Supported multi-user real-time cursor sync and lock-free edit synchronization.",
-        "Containerized code sandbox runner executing Python, JS, and C++ safely."
+        "Built LLM-powered workflows for automated document parsing and complaint categorization.",
+        "Designed RESTful APIs with FastAPI and SQLAlchemy for persistent database operations.",
+        "Streamlined ticket resolution with automated AI summary generation."
       ]
     }
   ],
   education: [
     {
       id: "edu-1",
-      institution: "State University of Technology",
+      institution: "Aligarh Muslim University",
       degree: "Bachelor of Technology (B.Tech)",
-      field: "Computer Science and Engineering",
+      field: "Computer Engineering",
       duration: "2021 \u2013 2025",
       cgpa: "8.9 / 10.0",
       scoreLabel: "CGPA",
       highlights: [
-        "Specialization in Artificial Intelligence and Cloud Systems.",
-        "Lead Developer at University AI Club & ACM Student Chapter.",
-        "Awarded Dean's List for Academic Excellence (4 Consecutive Semesters)."
+        "Pursuing B.Tech with focus on Software Engineering, Artificial Intelligence, and Web Development.",
+        "Built full-stack AI software projects, RESTful APIs, and responsive web applications."
       ]
     }
   ],
   achievements: [
-    "Winner of National Hackathon 2024 (1st Place among 350+ teams) for building an AI-powered accessibility tool.",
-    "Published research paper on 'Efficient Chunking Strategies in Domain-Specific RAG Pipelines' in IEEE Student Conference.",
-    "Maintained a 100+ day GitHub commit streak with 1,200+ contributions across open-source projects."
+    "Built full-stack AI applications integrating LLM workflows (Groq Llama, Google Gemini) and vector search.",
+    "Developed automated document processing and RAG document intelligence microservices.",
+    "Maintained an active open-source contribution record on GitHub across web and AI technologies."
   ]
 };
 
@@ -368,6 +349,18 @@ function extractSkillsFromRawText(rawText) {
     tools: Array.from(new Set(foundTools))
   };
 }
+function sanitizeCandidateName(rawName) {
+  if (!rawName) return "Sahil Singh";
+  let cleaned = rawName.trim();
+  cleaned = cleaned.replace(/\.(pdf|docx?)$/i, "");
+  cleaned = cleaned.replace(/[-_]/g, " ");
+  cleaned = cleaned.replace(/\b(resume|cv|profile|document|pdf|bio|info|details?|personal|\d+)\b/gi, "").trim();
+  cleaned = cleaned.replace(/\s+/g, " ").trim();
+  if (!cleaned || cleaned.length < 2 || cleaned.toLowerCase() === "candidate") {
+    return "Sahil Singh";
+  }
+  return cleaned.split(" ").map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(" ");
+}
 function cleanBioText(bio) {
   if (!bio) return "";
   let cleaned = bio;
@@ -378,7 +371,7 @@ function cleanBioText(bio) {
   }
   cleaned = cleaned.replace(/https?:\/\/[^\s]+/gi, "");
   cleaned = cleaned.replace(/(?:github|linkedin|location|email|phone)\s*(?:url)?\s*(?:of\s*[A-Za-z0-9_ ]+)?\s*[:-].*/gi, "");
-  cleaned = cleaned.replace(/^(?:professional\s+summary|profile\s+summary|summary|career\s+objective|about\s+me)[:\s\-_]*/i, "");
+  cleaned = cleaned.replace(/^(?:professional\s+summary|profile\s+summary|summary|career\s+objective|about\s+me|personal\s+details)[:\s\-_]*/i, "");
   cleaned = cleaned.replace(/[\s\-_:|]+$/g, "").trim();
   if (cleaned && !/[.!?]$/.test(cleaned)) {
     cleaned += ".";
@@ -397,7 +390,9 @@ function extractSummaryFromRawText(rawText) {
     "about me",
     "profile",
     "executive summary",
-    "personal summary"
+    "personal summary",
+    "personal details",
+    "bio"
   ];
   const stopHeaders = [
     "experience",
@@ -436,7 +431,16 @@ function extractSummaryFromRawText(rawText) {
       if (summaryLines.join(" ").length > 1500) break;
     }
   }
-  return cleanBioText(summaryLines.join(" ").trim());
+  const extracted = cleanBioText(summaryLines.join(" ").trim());
+  if (extracted.length > 30) return extracted;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.length >= 60 && !line.includes("@") && !/github|linkedin|phone|email/i.test(line)) {
+      const candidateBio = cleanBioText(line);
+      if (candidateBio.length >= 30) return candidateBio;
+    }
+  }
+  return "";
 }
 function extractEducationFromRawText(rawText) {
   if (!rawText) return [];
@@ -590,9 +594,12 @@ function extractSocialUrls(text) {
 }
 function fallbackParseResumeText(rawText, fileName) {
   const lines = rawText.split("\n").map((l) => l.trim()).filter(Boolean);
-  let name = fileName.replace(/\.pdf$/i, "").replace(/[-_]/g, " ").trim();
+  let name = sanitizeCandidateName(fileName);
   if (lines.length > 0 && lines[0].length < 40 && !lines[0].includes("@") && !lines[0].toLowerCase().includes("resume")) {
-    name = lines[0];
+    const candidateNameFromText = sanitizeCandidateName(lines[0]);
+    if (candidateNameFromText && candidateNameFromText !== "Candidate") {
+      name = candidateNameFromText;
+    }
   }
   const emailMatch = rawText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
   const phoneMatch = rawText.match(/(\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/);
@@ -620,11 +627,14 @@ function findCandidatePdfFiles() {
   const directoriesToSearch = [
     process.cwd(),
     path.join(process.cwd(), "backend"),
-    path.join(process.cwd(), "frontend", "public")
+    path.join(process.cwd(), "frontend", "public"),
+    path.join(process.cwd(), "public"),
+    path.join(process.cwd(), "frontend")
   ];
   const resumePdfs = [];
   const personalDetailPdfs = [];
   const uncategorizedPdfs = [];
+  const visitedPaths = /* @__PURE__ */ new Set();
   for (const dir of directoriesToSearch) {
     if (!fs.existsSync(dir)) continue;
     try {
@@ -632,12 +642,14 @@ function findCandidatePdfFiles() {
       for (const file of files) {
         if (!file.toLowerCase().endsWith(".pdf")) continue;
         const fullPath = path.join(dir, file);
+        if (visitedPaths.has(fullPath)) continue;
+        visitedPaths.add(fullPath);
         try {
           const stat = fs.statSync(fullPath);
           const fLower = file.toLowerCase();
           if (fLower.includes("resume") || fLower.includes("cv")) {
             resumePdfs.push({ path: fullPath, name: file, mtimeMs: stat.mtimeMs });
-          } else if (fLower.includes("personal") || fLower.includes("detail") || fLower.includes("details") || fLower.includes("information") || fLower.includes("info") || fLower.includes("bio") || fLower.includes("profile")) {
+          } else if (fLower.includes("personal") || fLower.includes("detail") || fLower.includes("details") || fLower.includes("information") || fLower.includes("info") || fLower.includes("bio") || fLower.includes("profile") || fLower.includes("about") || fLower.includes("contact") || fLower.includes("extra") || fLower.includes("data") || fLower.includes("background")) {
             personalDetailPdfs.push({ path: fullPath, name: file, mtimeMs: stat.mtimeMs });
           } else {
             uncategorizedPdfs.push({ path: fullPath, name: file, mtimeMs: stat.mtimeMs });
@@ -652,7 +664,10 @@ function findCandidatePdfFiles() {
   personalDetailPdfs.sort((a, b) => b.mtimeMs - a.mtimeMs);
   uncategorizedPdfs.sort((a, b) => b.mtimeMs - a.mtimeMs);
   if (resumePdfs.length === 0 && uncategorizedPdfs.length > 0) {
-    resumePdfs.push(uncategorizedPdfs[0]);
+    resumePdfs.push(uncategorizedPdfs.shift());
+  }
+  if (personalDetailPdfs.length === 0 && uncategorizedPdfs.length > 0) {
+    personalDetailPdfs.push(uncategorizedPdfs.shift());
   }
   return { resumePdfs, personalDetailPdfs };
 }
@@ -896,12 +911,16 @@ ${combinedRawText.slice(0, 12e3)}`
           highlights: [proj]
         };
       }
+      let gh = ensureAbsoluteUrl(proj.githubUrl || proj.github_url || proj.github || "");
+      if (gh.includes("sahilsingh-dev") || gh.includes("github.com/...")) {
+        gh = "";
+      }
       return {
         id: proj.id || `proj-${idx + 1}`,
         title: proj.title || proj.name || `Project ${idx + 1}`,
         description: proj.description || proj.summary || "Project built by candidate.",
         techStack: Array.isArray(proj.techStack) && proj.techStack.length > 0 ? proj.techStack : Array.isArray(proj.tech_stack) ? proj.tech_stack : ["Full-Stack", "Software Development"],
-        githubUrl: ensureAbsoluteUrl(proj.githubUrl || proj.github_url || proj.github || ""),
+        githubUrl: gh,
         liveUrl: ensureAbsoluteUrl(proj.liveUrl || proj.live_url || ""),
         category: proj.category || "AI & Full-Stack",
         highlights: Array.isArray(proj.highlights) && proj.highlights.length > 0 ? proj.highlights : [proj.description || "Key technical accomplishment."]
@@ -964,7 +983,7 @@ ${combinedRawText.slice(0, 12e3)}`
     const resolvedEmail = parsedProfile.email && parsedProfile.email.includes("@") ? parsedProfile.email : sahilProfile.email;
     const resolvedPhone = parsedProfile.phone && parsedProfile.phone.length > 6 ? parsedProfile.phone : sahilProfile.phone;
     activeCandidateProfile = {
-      name: parsedProfile.name && parsedProfile.name !== "Candidate" ? parsedProfile.name : sahilProfile.name,
+      name: sanitizeCandidateName(parsedProfile.name || sahilProfile.name),
       title: parsedProfile.title || sahilProfile.title,
       location: resolvedLocation,
       email: resolvedEmail,
@@ -975,30 +994,34 @@ ${combinedRawText.slice(0, 12e3)}`
       avatarUrl: sahilProfile.avatarUrl,
       totalExperienceYears: parsedProfile.totalExperienceYears !== void 0 ? parsedProfile.totalExperienceYears : sahilProfile.totalExperienceYears,
       bio: resolvedBio || sahilProfile.bio,
-      resumeRawText: combinedRawText || "Resume PDF parsed by multimodal Gemini AI.",
+      resumeRawText: combinedRawText || "Resume PDF parsed by Groq / Gemini AI.",
       skills: (() => {
         const rawSk = parsedProfile.skills || {};
-        const lang = Array.isArray(rawSk.languages) ? rawSk.languages : [];
-        const fram = Array.isArray(rawSk.frameworks) ? rawSk.frameworks : [];
-        const aiml = Array.isArray(rawSk.aiMl) ? rawSk.aiMl : Array.isArray(rawSk.ai_ml) ? rawSk.ai_ml : [];
-        const db = Array.isArray(rawSk.databases) ? rawSk.databases : [];
-        const tools = Array.isArray(rawSk.tools) ? rawSk.tools : [];
-        const totalCount = lang.length + fram.length + aiml.length + db.length + tools.length;
-        if (totalCount === 0 && combinedRawText) {
-          return extractSkillsFromRawText(combinedRawText);
+        let lang = Array.isArray(rawSk.languages) ? rawSk.languages : [];
+        let fram = Array.isArray(rawSk.frameworks) ? rawSk.frameworks : [];
+        let aiml = Array.isArray(rawSk.aiMl) ? rawSk.aiMl : Array.isArray(rawSk.ai_ml) ? rawSk.ai_ml : [];
+        let db = Array.isArray(rawSk.databases) ? rawSk.databases : [];
+        let tools = Array.isArray(rawSk.tools) ? rawSk.tools : [];
+        if (combinedRawText) {
+          const extractedSk = extractSkillsFromRawText(combinedRawText);
+          lang = Array.from(/* @__PURE__ */ new Set([...lang, ...extractedSk.languages]));
+          fram = Array.from(/* @__PURE__ */ new Set([...fram, ...extractedSk.frameworks]));
+          aiml = Array.from(/* @__PURE__ */ new Set([...aiml, ...extractedSk.aiMl]));
+          db = Array.from(/* @__PURE__ */ new Set([...db, ...extractedSk.databases]));
+          tools = Array.from(/* @__PURE__ */ new Set([...tools, ...extractedSk.tools]));
         }
         return {
-          languages: lang,
-          frameworks: fram,
-          aiMl: aiml,
-          databases: db,
-          tools
+          languages: lang.length > 0 ? lang : sahilProfile.skills.languages,
+          frameworks: fram.length > 0 ? fram : sahilProfile.skills.frameworks,
+          aiMl: aiml.length > 0 ? aiml : sahilProfile.skills.aiMl,
+          databases: db.length > 0 ? db : sahilProfile.skills.databases,
+          tools: tools.length > 0 ? tools : sahilProfile.skills.tools
         };
       })(),
       experiences: Array.isArray(parsedProfile.experiences) ? parsedProfile.experiences : [],
-      projects: sanitizedProjects.length > 0 ? sanitizedProjects : sahilProfile.projects,
+      projects: sanitizedProjects,
       education: resolvedEducation,
-      achievements: Array.isArray(parsedProfile.achievements) ? parsedProfile.achievements : [],
+      achievements: Array.isArray(parsedProfile.achievements) && parsedProfile.achievements.length > 0 ? parsedProfile.achievements : sahilProfile.achievements,
       personalDetails: extractedPersonalDetailsText || activeCandidateProfile.personalDetails
     };
     console.log(`\u2705 Successfully loaded candidate profile for ${activeCandidateProfile.name}!`);
