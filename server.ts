@@ -1,8 +1,8 @@
 import express, { Request, Response } from 'express';
 import path from 'path';
 import fs from 'fs';
+import zlib from 'zlib';
 import dotenv from 'dotenv';
-import { GoogleGenAI } from '@google/genai';
 import { sahilProfile } from './frontend/src/data/candidateData.js';
 import { CandidateProfile } from './frontend/src/types.js';
 
@@ -17,23 +17,103 @@ app.use(express.json({ limit: '10mb' }));
 let activeCandidateProfile: CandidateProfile = { ...sahilProfile };
 let lastParsedPdfSignature = '';
 
-// Helper to initialize Gemini lazily
-function getGeminiClient(): GoogleGenAI | null {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
-    return null;
-  }
-  return new GoogleGenAI({
-    apiKey,
-    httpOptions: {
-      headers: {
-        'User-Agent': 'aistudio-build',
-      },
-    },
-  });
+// Helper for Groq API primary model engine
+function isGroqConfigured(): boolean {
+  const key = process.env.GROQ_API_KEY;
+  return !!key && key !== 'your_groq_api_key_here';
 }
 
-// Universal PDF text extractor compatible with pdf-parse v1, v2 (PDFParse class), and raw fallback
+// Extract text from FlateDecode compressed PDF streams using Node's built-in zlib module
+function extractTextWithZlib(pdfBuffer: Buffer): string {
+  const textPieces: string[] = [];
+  try {
+    const pdfString = pdfBuffer.toString('latin1');
+    const streamRegex = /stream[\r\n]+([\s\S]*?)[\r\n]+endstream/g;
+    let match: RegExpExecArray | null;
+
+    while ((match = streamRegex.exec(pdfString)) !== null) {
+      const matchIndex = match.index;
+      const sStart = pdfBuffer.indexOf(Buffer.from('stream'), matchIndex);
+      if (sStart === -1) continue;
+
+      let dataStart = sStart + 6;
+      if (pdfBuffer[dataStart] === 13) dataStart++;
+      if (pdfBuffer[dataStart] === 10) dataStart++;
+
+      const eEnd = pdfBuffer.indexOf(Buffer.from('endstream'), dataStart);
+      if (eEnd === -1 || eEnd <= dataStart) continue;
+
+      const compressedChunk = pdfBuffer.subarray(dataStart, eEnd);
+      let decompressed: Buffer | null = null;
+
+      try {
+        decompressed = zlib.inflateSync(compressedChunk);
+      } catch {
+        try {
+          decompressed = zlib.unzipSync(compressedChunk);
+        } catch {
+          try {
+            decompressed = zlib.inflateRawSync(compressedChunk);
+          } catch {
+            decompressed = compressedChunk;
+          }
+        }
+      }
+
+      if (decompressed) {
+        const decodedStr = decompressed.toString('latin1');
+        
+        // 1. Match standard PDF text Tj and TJ instructions
+        const stringLiterals = decodedStr.match(/\(([^()]*)\)\s*T[jJ]/g) || decodedStr.match(/\[\s*\(([^()]*)\)[\s\S]*?\]\s*T[jJ]/g);
+        if (stringLiterals) {
+          for (const lit of stringLiterals) {
+            const inner = lit.match(/\(([^()]*)\)/g);
+            if (inner) {
+              for (const s of inner) {
+                const cleaned = s.slice(1, -1).replace(/\\([()\\])/g, '$1').trim();
+                if (cleaned.length > 0) {
+                  textPieces.push(cleaned);
+                }
+              }
+            }
+          }
+        } else {
+          // 2. Fallback: Extract text literals inside parentheses inside stream
+          const allParens = decodedStr.match(/\(([^()]{2,})\)/g);
+          if (allParens) {
+            for (const p of allParens) {
+              const cleaned = p.slice(1, -1).replace(/\\([()\\])/g, '$1').trim();
+              if (
+                cleaned.length > 1 &&
+                /[a-zA-Z0-9]/.test(cleaned) &&
+                !/^\/|^[0-9.]+$|^Font|^Color|^Device|^Obj|^Catalog|^Page/i.test(cleaned)
+              ) {
+                textPieces.push(cleaned);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Uncompressed text matching
+    const uncompressedMatches = pdfString.match(/\(([^()]*)\)\s*T[jJ]/g);
+    if (uncompressedMatches) {
+      for (const m of uncompressedMatches) {
+        const cleaned = m.replace(/^\(/, '').replace(/\)\s*T[jJ]$/, '').replace(/\\([()\\])/g, '$1').trim();
+        if (cleaned.length > 0) {
+          textPieces.push(cleaned);
+        }
+      }
+    }
+  } catch (err) {
+    // Ignore zlib errors
+  }
+
+  return textPieces.join(' ').replace(/\s+/g, ' ').trim();
+}
+
+// Universal PDF text extractor compatible with pdf-parse v1, v2, pure zlib decompression, and Gemini multimodal
 async function extractTextFromPdfBuffer(pdfBuffer: Buffer): Promise<string> {
   // Polyfill DOMMatrix / ImageData / Path2D globals for node serverless env if pdfjs-dist requires them
   if (typeof globalThis.DOMMatrix === 'undefined') {
@@ -94,7 +174,7 @@ async function extractTextFromPdfBuffer(pdfBuffer: Buffer): Promise<string> {
       const parser = new PDFParseClass({ data: pdfBuffer });
       if (typeof parser.getText === 'function') {
         const res = await parser.getText();
-        if (res?.text && res.text.trim()) {
+        if (res?.text && res.text.trim().length > 30) {
           restoreLogs();
           return res.text.trim();
         }
@@ -103,7 +183,7 @@ async function extractTextFromPdfBuffer(pdfBuffer: Buffer): Promise<string> {
     const fn = typeof mod === 'function' ? mod : mod.default;
     if (typeof fn === 'function') {
       const res = await fn(pdfBuffer);
-      if (res?.text && res.text.trim()) {
+      if (res?.text && res.text.trim().length > 30) {
         restoreLogs();
         return res.text.trim();
       }
@@ -122,14 +202,14 @@ async function extractTextFromPdfBuffer(pdfBuffer: Buffer): Promise<string> {
       const dynamicMod = req('pdf-parse');
       if (typeof dynamicMod === 'function') {
         const res = await dynamicMod(pdfBuffer);
-        if (res?.text && res.text.trim()) {
+        if (res?.text && res.text.trim().length > 30) {
           restoreLogs();
           return res.text.trim();
         }
       } else if (dynamicMod?.PDFParse) {
         const parser = new dynamicMod.PDFParse({ data: pdfBuffer });
         const res = await parser.getText();
-        if (res?.text && res.text.trim()) {
+        if (res?.text && res.text.trim().length > 30) {
           restoreLogs();
           return res.text.trim();
         }
@@ -141,30 +221,13 @@ async function extractTextFromPdfBuffer(pdfBuffer: Buffer): Promise<string> {
     restoreLogs();
   }
 
-  // 3. Raw text extraction from PDF streams as last resort
-  try {
-    const str = pdfBuffer.toString('latin1');
-    const textMatches: string[] = [];
-    const streamRegex = /BT[\s\S]*?ET/g;
-    let match;
-    while ((match = streamRegex.exec(str)) !== null) {
-      const rawBlock = match[0];
-      const tjMatches = rawBlock.match(/\(([^)]+)\)\s*T[jJ]/g);
-      if (tjMatches) {
-        for (const tj of tjMatches) {
-          const content = tj.replace(/^\(/, '').replace(/\)\s*T[jJ]$/, '').replace(/\\/g, '');
-          textMatches.push(content);
-        }
-      }
-    }
-    if (textMatches.length > 0) {
-      return textMatches.join(' ');
-    }
-  } catch (e) {
-    // ignore
+  // 3. Try pure Node.js zlib stream decompression
+  const zlibText = extractTextWithZlib(pdfBuffer);
+  if (zlibText && zlibText.trim().length > 30) {
+    return zlibText.trim();
   }
 
-  return '';
+  return zlibText || '';
 }
 
 // Extract projects directly from raw resume text if LLM JSON parser missed them or is offline
@@ -573,62 +636,84 @@ function fallbackParseResumeText(rawText: string, fileName: string) {
   };
 }
 
-// Scan directories for any candidate PDF files (Resumes and Personal Details/Information)
+// Scan directories recursively for any candidate PDF files (Resumes and Personal Details/Information)
 function findCandidatePdfFiles() {
-  const directoriesToSearch = [
-    process.cwd(),
-    path.join(process.cwd(), 'backend'),
-    path.join(process.cwd(), 'frontend', 'public'),
-    path.join(process.cwd(), 'public'),
-    path.join(process.cwd(), 'frontend'),
-  ];
-
   const resumePdfs: { path: string; name: string; mtimeMs: number }[] = [];
   const personalDetailPdfs: { path: string; name: string; mtimeMs: number }[] = [];
   const uncategorizedPdfs: { path: string; name: string; mtimeMs: number }[] = [];
   const visitedPaths = new Set<string>();
 
-  for (const dir of directoriesToSearch) {
-    if (!fs.existsSync(dir)) continue;
+  const baseDirs = [
+    process.cwd(),
+    path.resolve(process.cwd(), '..'),
+    path.join(process.cwd(), 'backend'),
+    path.join(process.cwd(), 'public'),
+    path.join(process.cwd(), 'frontend', 'public'),
+    path.join(process.cwd(), 'frontend'),
+    '/var/task',
+    '/tmp',
+  ];
+
+  function scanDirRecursive(dirPath: string, depth = 0) {
+    if (depth > 4 || !dirPath || !fs.existsSync(dirPath)) return;
     try {
-      const files = fs.readdirSync(dir);
-      for (const file of files) {
-        if (!file.toLowerCase().endsWith('.pdf')) continue;
-        const fullPath = path.join(dir, file);
+      const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(dirPath, entry.name);
         if (visitedPaths.has(fullPath)) continue;
         visitedPaths.add(fullPath);
 
-        try {
-          const stat = fs.statSync(fullPath);
-          const fLower = file.toLowerCase();
-
-          if (fLower.includes('resume') || fLower.includes('cv')) {
-            resumePdfs.push({ path: fullPath, name: file, mtimeMs: stat.mtimeMs });
-          } else if (
-            fLower.includes('personal') ||
-            fLower.includes('detail') ||
-            fLower.includes('details') ||
-            fLower.includes('information') ||
-            fLower.includes('info') ||
-            fLower.includes('bio') ||
-            fLower.includes('profile') ||
-            fLower.includes('about') ||
-            fLower.includes('contact') ||
-            fLower.includes('extra') ||
-            fLower.includes('data') ||
-            fLower.includes('background')
+        if (entry.isDirectory()) {
+          const dName = entry.name.toLowerCase();
+          if (
+            dName === 'node_modules' ||
+            dName === '.git' ||
+            dName === '.next' ||
+            dName === 'dist' ||
+            dName === '.cache' ||
+            dName === 'build' ||
+            dName === 'coverage'
           ) {
-            personalDetailPdfs.push({ path: fullPath, name: file, mtimeMs: stat.mtimeMs });
-          } else {
-            uncategorizedPdfs.push({ path: fullPath, name: file, mtimeMs: stat.mtimeMs });
+            continue;
           }
-        } catch (e) {
-          // ignore stat errors
+          scanDirRecursive(fullPath, depth + 1);
+        } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.pdf')) {
+          try {
+            const stat = fs.statSync(fullPath);
+            const fLower = entry.name.toLowerCase();
+
+            if (fLower.includes('resume') || fLower.includes('cv')) {
+              resumePdfs.push({ path: fullPath, name: entry.name, mtimeMs: stat.mtimeMs });
+            } else if (
+              fLower.includes('personal') ||
+              fLower.includes('detail') ||
+              fLower.includes('details') ||
+              fLower.includes('information') ||
+              fLower.includes('info') ||
+              fLower.includes('bio') ||
+              fLower.includes('profile') ||
+              fLower.includes('about') ||
+              fLower.includes('contact') ||
+              fLower.includes('extra') ||
+              fLower.includes('data') ||
+              fLower.includes('background')
+            ) {
+              personalDetailPdfs.push({ path: fullPath, name: entry.name, mtimeMs: stat.mtimeMs });
+            } else {
+              uncategorizedPdfs.push({ path: fullPath, name: entry.name, mtimeMs: stat.mtimeMs });
+            }
+          } catch (e) {
+            // ignore
+          }
         }
       }
     } catch (e) {
-      // ignore readdir errors
+      // ignore
     }
+  }
+
+  for (const bDir of baseDirs) {
+    scanDirRecursive(bDir, 0);
   }
 
   resumePdfs.sort((a, b) => b.mtimeMs - a.mtimeMs);
@@ -844,55 +929,7 @@ Return strictly JSON matching this structure:
       parsedProfile = await callGroqForResumeParse(parsePrompt, combinedRawText);
     }
 
-    // 2. Secondary Method: Fallback to Gemini AI if Groq was not configured or returned invalid output
-    if (!parsedProfile || !parsedProfile.name) {
-      const ai = getGeminiClient();
-      if (ai) {
-        const contentsParts: any[] = [];
-
-        // Pass PDF binary directly to Gemini as multimodal inlineData parts
-        if (resumePdfBuffer) {
-          contentsParts.push({
-            inlineData: {
-              mimeType: 'application/pdf',
-              data: resumePdfBuffer.toString('base64'),
-            },
-          });
-        }
-
-        if (personalDetailsBuffer) {
-          contentsParts.push({
-            inlineData: {
-              mimeType: 'application/pdf',
-              data: personalDetailsBuffer.toString('base64'),
-            },
-          });
-        }
-
-        if (combinedRawText && combinedRawText.trim()) {
-          contentsParts.push({
-            text: `Raw Extracted Document Text:\n${combinedRawText.slice(0, 12000)}`,
-          });
-        }
-
-        contentsParts.push({ text: parsePrompt });
-
-        try {
-          const geminiRes = await ai.models.generateContent({
-            model: 'gemini-3.6-flash',
-            contents: [{ role: 'user', parts: contentsParts }],
-            config: { responseMimeType: 'application/json' },
-          });
-
-          if (geminiRes.text) {
-            parsedProfile = JSON.parse(geminiRes.text);
-          }
-        } catch (aiErr) {
-          console.warn('Gemini AI multimodal resume parsing failed:', aiErr);
-        }
-      }
-    }
-
+    // 2. Fallback: Parse resume text deterministically if Groq is not configured or returned empty
     if (!parsedProfile || !parsedProfile.name) {
       parsedProfile = fallbackParseResumeText(combinedRawText, resumePdfs[0]?.name || personalDetailPdfs[0]?.name || 'candidate');
     }
@@ -1120,15 +1157,24 @@ function cleanLlmResponse(text: string): string {
 function generateFallbackAnswer(question: string, profile?: any): string {
   const q = question.toLowerCase();
 
-  if (q.includes('update resume') || q.includes('new resume') || q.includes('replace resume') || q.includes('change resume') || q.includes('modify resume') || q.includes('upload new resume') || (q.includes('resume') && (q.includes('update') || q.includes('new') || q.includes('change') || q.includes('replace')))) {
+  if (
+    q.includes('update resume') ||
+    q.includes('new resume') ||
+    q.includes('replace resume') ||
+    q.includes('change resume') ||
+    q.includes('modify resume') ||
+    q.includes('upload new resume') ||
+    (q.includes('resume') && (q.includes('update') || q.includes('new') || q.includes('change') || q.includes('replace')))
+  ) {
     return `I can't update the resume, I don't have this much permission.`;
   }
 
-  const name = profile?.name || 'Sahil Singh';
-  const bio = profile?.bio || 'AI & Full-Stack Engineer';
+  const name = profile?.name || 'Candidate';
+  const bio = profile?.bio || profile?.resumeRawText?.slice(0, 500) || 'Experienced Professional';
+  const rawDocText = [profile?.resumeRawText, profile?.personalDetails].filter(Boolean).join('\n\n');
 
-  if (q.includes('tell me about') || q.includes('who are you') || q.includes('summary') || q.includes('bio') || q.includes('intro')) {
-    return `Hello! I am ${name}'s AI representative.\n\n**${name}** - ${profile?.title || 'AI & Full-Stack Engineer'}\n\n${bio}\n\nHow can I help you learn more about ${name}'s experience, background, or job match?`;
+  if (q.includes('tell me about') || q.includes('who are you') || q.includes('summary') || q.includes('bio') || q.includes('intro') || q.includes('background')) {
+    return `Hello! I am ${name}'s AI representative.\n\n**${name}** - ${profile?.title || 'Professional Profile'}\n\n${bio}\n\nHow can I help you learn more about ${name}'s experience, background, skills, or projects?`;
   }
 
   if (q.includes('project') || q.includes('build') || q.includes('portfolio') || q.includes('work')) {
@@ -1136,7 +1182,6 @@ function generateFallbackAnswer(question: string, profile?: any): string {
       const list = profile.projects.map((p: any, i: number) => `${i + 1}. **${p.title}**: ${p.description}`).join('\n\n');
       return `${name}'s Key Projects:\n\n${list}`;
     }
-    return `${name} has built multiple impressive AI & full-stack projects including live LLM streaming web apps, RAG document intelligence microservices, and interactive web workspaces.`;
   }
 
   if (q.includes('skill') || q.includes('technology') || q.includes('tech stack') || q.includes('know') || q.includes('language')) {
@@ -1144,11 +1189,42 @@ function generateFallbackAnswer(question: string, profile?: any): string {
       const langs = (profile.skills.languages || []).join(', ');
       const fw = (profile.skills.frameworks || []).join(', ');
       const ai = (profile.skills.aiMl || []).join(', ');
-      return `Here is a summary of ${name}'s technical skills:\n\n- **Languages**: ${langs || 'Python, TypeScript, JavaScript, SQL'}\n- **Frameworks**: ${fw || 'FastAPI, React 19, Node.js, Express, Tailwind CSS'}\n- **AI/ML**: ${ai || 'PyTorch, Groq API, Gemini API, RAG, Vector DBs'}`;
+      const db = (profile.skills.databases || []).join(', ');
+      const tools = (profile.skills.tools || []).join(', ');
+      return `Here is a summary of ${name}'s technical skills:\n\n- **Languages**: ${langs || 'N/A'}\n- **Frameworks & Web**: ${fw || 'N/A'}\n- **AI/ML**: ${ai || 'N/A'}\n- **Databases**: ${db || 'N/A'}\n- **Tools**: ${tools || 'N/A'}`;
     }
   }
 
-  return `Thank you for asking! ${name} is a skilled professional with experience in AI and full-stack software development.\n\n- **Name**: ${name}\n- **Title**: ${profile?.title || 'Engineer'}\n- **Contact**: ${profile?.email || 'Available on request'}\n\nFeel free to ask specific questions about ${name}'s background, skills, or projects!`;
+  if (q.includes('education') || q.includes('degree') || q.includes('college') || q.includes('university') || q.includes('school') || q.includes('study') || q.includes('cgpa')) {
+    if (profile?.education?.length > 0) {
+      const edList = profile.education.map((e: any) => `- **${e.degree}** in ${e.field} at ${e.institution} (${e.duration}). Score/CGPA: ${e.cgpa}`).join('\n');
+      return `${name}'s Educational Background:\n\n${edList}`;
+    }
+  }
+
+  if (q.includes('contact') || q.includes('email') || q.includes('phone') || q.includes('github') || q.includes('linkedin') || q.includes('location')) {
+    return `${name}'s Contact Information:\n\n- **Email**: ${profile?.email || 'N/A'}\n- **Phone**: ${profile?.phone || 'N/A'}\n- **Location**: ${profile?.location || 'N/A'}\n- **GitHub**: ${profile?.github || 'N/A'}\n- **LinkedIn**: ${profile?.linkedin || 'N/A'}`;
+  }
+
+  // Search raw document text for question keywords
+  if (rawDocText) {
+    const docLines = rawDocText.split('\n').filter((l) => l.trim().length > 0);
+    const keywords = q.split(/\s+/).filter((w) => w.length > 3 && !['what', 'where', 'when', 'which', 'about', 'their', 'there', 'this', 'that', 'from', 'with', 'have'].includes(w));
+    
+    if (keywords.length > 0) {
+      const matchingLines = docLines.filter((line) => {
+        const lLower = line.toLowerCase();
+        return keywords.some((kw) => lLower.includes(kw));
+      });
+
+      if (matchingLines.length > 0) {
+        const snippet = matchingLines.slice(0, 6).join('\n');
+        return `Based on ${name}'s uploaded documents:\n\n${snippet}`;
+      }
+    }
+  }
+
+  return `Thank you for asking! ${name} is a skilled professional.\n\n- **Name**: ${name}\n- **Title**: ${profile?.title || 'Engineer'}\n- **Contact**: ${profile?.email || 'Available on request'}\n\n${bio}`;
 }
 
 // Helper to call Groq API directly using GROQ_API_KEY with model fallback
@@ -1158,8 +1234,8 @@ async function callGroqApi(question: string): Promise<string | null> {
     return null;
   }
   
-  const configuredModel = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
-  const modelsToTry = [configuredModel, 'openai/gpt-oss-120b', 'llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'];
+  const configuredModel = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+  const modelsToTry = [configuredModel, 'llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it', 'mixtral-8x7b-32768', 'qwen-2.5-32b'];
   const uniqueModels = Array.from(new Set(modelsToTry));
 
   const profile = await updateProfileFromResumePdfIfNeeded();
@@ -1204,9 +1280,8 @@ app.get('/api/health', (req: Request, res: Response) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
-    groqConfigured: !!process.env.GROQ_API_KEY && process.env.GROQ_API_KEY !== 'your_groq_api_key_here',
-    groqModel: process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
-    geminiConfigured: !!process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'MY_GEMINI_API_KEY',
+    groqConfigured: isGroqConfigured(),
+    groqModel: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
     fastapiConfigured: !!process.env.FASTAPI_URL,
     fastapiUrl: process.env.FASTAPI_URL || null,
   });
@@ -1228,7 +1303,6 @@ app.post(['/chat', '/api/chat'], async (req: Request, res: Response) => {
   }
 
   const profile = await updateProfileFromResumePdfIfNeeded();
-  const currentSystemPrompt = getSystemPrompt(profile);
 
   // Refuse updating resume rule
   const qLower = question.toLowerCase();
@@ -1289,34 +1363,16 @@ app.post(['/chat', '/api/chat'], async (req: Request, res: Response) => {
         }
       }
     } catch (err) {
-      console.log('⚡ Local Python FastAPI server on port 8000 is offline. Proceeding seamlessly with Node Groq/Gemini LLM engine.');
+      console.log('⚡ Local Python FastAPI server on port 8000 is offline. Proceeding seamlessly with Groq LLM engine.');
     }
   }
 
-  let answer = '';
+  // Primary: Try Groq API directly
+  let answer = await callGroqApi(question);
 
-  // 1. First Priority: Try Groq API directly
-  const groqAnswer = await callGroqApi(question);
-  if (groqAnswer) {
-    answer = groqAnswer;
-  } else {
-    // 2. Second Priority: Try Gemini API
-    const ai = getGeminiClient();
-    if (ai) {
-      try {
-        const response = await ai.models.generateContent({
-          model: 'gemini-3.6-flash',
-          contents: [{ role: 'user', parts: [{ text: `${currentSystemPrompt}\n\nUser Question: ${question}` }] }],
-        });
-        answer = response.text || generateFallbackAnswer(question);
-      } catch (error: any) {
-        console.warn('Gemini API call failed, using intelligent candidate fallback:', error?.message || error);
-        answer = generateFallbackAnswer(question);
-      }
-    } else {
-      // 3. Fallback: Intelligent candidate response rules
-      answer = generateFallbackAnswer(question);
-    }
+  // Secondary Fallback: Intelligent candidate response generator
+  if (!answer) {
+    answer = generateFallbackAnswer(question, profile);
   }
 
   answer = cleanLlmResponse(answer);
@@ -1385,8 +1441,57 @@ app.post('/api/job-match', async (req: Request, res: Response) => {
   if (jdLower.includes('senior') || jdLower.includes('lead')) dynamicScore -= 5;
   dynamicScore = Math.min(97, Math.max(52, dynamicScore));
 
-  const ai = getGeminiClient();
-  if (ai) {
+// Helper to call Groq API for Job Match analysis
+async function callGroqForJobMatch(promptText: string): Promise<any | null> {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey || apiKey === 'your_groq_api_key_here') return null;
+
+  const configuredModel = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+  const modelsToTry = [configuredModel, 'llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it', 'mixtral-8x7b-32768'];
+  const uniqueModels = Array.from(new Set(modelsToTry));
+
+  for (const model of uniqueModels) {
+    try {
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model,
+          response_format: { type: 'json_object' },
+          messages: [
+            {
+              role: 'system',
+              content: 'You are an expert technical talent assessor. Evaluate candidate fit for the job description and output ONLY valid JSON.',
+            },
+            {
+              role: 'user',
+              content: promptText,
+            },
+          ],
+          temperature: 0.2,
+        }),
+      });
+
+      if (res.ok) {
+        const data: any = await res.json();
+        const content = data.choices?.[0]?.message?.content;
+        if (content) {
+          const cleaned = content.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/\s*```$/, '').trim();
+          return JSON.parse(cleaned);
+        }
+      }
+    } catch (e) {
+      console.warn(`Groq Job Match exception with model ${model}:`, e);
+    }
+  }
+
+  return null;
+}
+
+  if (isGroqConfigured()) {
     try {
       const promptText = `Analyze this job description for candidate ${activeProfile.name || sahilProfile.name}:
       
@@ -1409,14 +1514,8 @@ app.post('/api/job-match', async (req: Request, res: Response) => {
       - recommendation (string e.g. "Highly Recommended for Technical Interview")
       `;
 
-      const geminiRes = await ai.models.generateContent({
-        model: 'gemini-3.6-flash',
-        contents: [{ role: 'user', parts: [{ text: promptText }] }],
-        config: { responseMimeType: 'application/json' },
-      });
-
-      if (geminiRes.text) {
-        const parsed = JSON.parse(geminiRes.text);
+      const parsed = await callGroqForJobMatch(promptText);
+      if (parsed) {
         res.json({
           matchScore: typeof parsed.matchScore === 'number' ? parsed.matchScore : dynamicScore,
           candidateName: activeProfile.name || sahilProfile.name,
@@ -1434,11 +1533,7 @@ app.post('/api/job-match', async (req: Request, res: Response) => {
         return;
       }
     } catch (e: any) {
-      if (e?.status === 429 || e?.message?.includes('RESOURCE_EXHAUSTED') || e?.message?.includes('quota')) {
-        console.warn('Gemini Job Match quota exceeded (429), using dynamic fallback matcher.');
-      } else {
-        console.warn('Gemini Job Match failed, using fallback engine:', e?.message || e);
-      }
+      console.warn('Groq Job Match failed, using fallback engine:', e?.message || e);
     }
   }
 
