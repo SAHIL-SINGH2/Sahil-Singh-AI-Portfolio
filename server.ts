@@ -53,6 +53,38 @@ async function extractTextFromPdfBuffer(pdfBuffer: Buffer): Promise<string> {
     (globalThis as any).Path2D = class Path2D {};
   }
 
+  // Intercept warnings during pdf-parse execution to suppress @napi-rs/canvas warning logs in Vercel
+  const originalWarn = console.warn;
+  const originalError = console.error;
+  const quietFilter = (...args: any[]) => {
+    const str = args.map((a) => String(a || '')).join(' ');
+    return (
+      str.includes('@napi-rs/canvas') ||
+      str.includes('pdfjs-dist') ||
+      str.includes('DOMMatrix') ||
+      str.includes('ImageData') ||
+      str.includes('Path2D')
+    );
+  };
+
+  const silenceLogs = () => {
+    console.warn = (...args: any[]) => {
+      if (quietFilter(...args)) return;
+      originalWarn(...args);
+    };
+    console.error = (...args: any[]) => {
+      if (quietFilter(...args)) return;
+      originalError(...args);
+    };
+  };
+
+  const restoreLogs = () => {
+    console.warn = originalWarn;
+    console.error = originalError;
+  };
+
+  silenceLogs();
+
   // 1. Try dynamic import of pdf-parse
   try {
     const pdfParseModule = await import('pdf-parse');
@@ -63,6 +95,7 @@ async function extractTextFromPdfBuffer(pdfBuffer: Buffer): Promise<string> {
       if (typeof parser.getText === 'function') {
         const res = await parser.getText();
         if (res?.text && res.text.trim()) {
+          restoreLogs();
           return res.text.trim();
         }
       }
@@ -71,29 +104,41 @@ async function extractTextFromPdfBuffer(pdfBuffer: Buffer): Promise<string> {
     if (typeof fn === 'function') {
       const res = await fn(pdfBuffer);
       if (res?.text && res.text.trim()) {
+        restoreLogs();
         return res.text.trim();
       }
     }
   } catch (e) {
     // try next strategy
+  } finally {
+    restoreLogs();
   }
 
   // 2. Try dynamic require if available
+  silenceLogs();
   try {
     const req = typeof require !== 'undefined' ? require : null;
     if (req) {
       const dynamicMod = req('pdf-parse');
       if (typeof dynamicMod === 'function') {
         const res = await dynamicMod(pdfBuffer);
-        if (res?.text && res.text.trim()) return res.text.trim();
+        if (res?.text && res.text.trim()) {
+          restoreLogs();
+          return res.text.trim();
+        }
       } else if (dynamicMod?.PDFParse) {
         const parser = new dynamicMod.PDFParse({ data: pdfBuffer });
         const res = await parser.getText();
-        if (res?.text && res.text.trim()) return res.text.trim();
+        if (res?.text && res.text.trim()) {
+          restoreLogs();
+          return res.text.trim();
+        }
       }
     }
   } catch (e) {
     // try fallback
+  } finally {
+    restoreLogs();
   }
 
   // 3. Raw text extraction from PDF streams as last resort
@@ -559,6 +604,72 @@ function findCandidatePdfFiles() {
 }
 
 // Check and parse resume and personal details PDFs if present
+async function callGroqForResumeParse(parsePrompt: string, combinedText: string): Promise<any | null> {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey || apiKey === 'your_groq_api_key_here') {
+    return null;
+  }
+
+  const configuredModel = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+  const modelsToTry = [configuredModel, 'llama-3.3-70b-versatile', 'openai/gpt-oss-120b', 'llama-3.1-8b-instant', 'gemma2-9b-it', 'mixtral-8x7b-32768'];
+  const uniqueModels = Array.from(new Set(modelsToTry));
+
+  const truncatedText = combinedText.slice(0, 15000);
+
+  for (const model of uniqueModels) {
+    try {
+      console.log(`🤖 Parsing candidate resume using Groq API model (${model})...`);
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model,
+          response_format: { type: 'json_object' },
+          messages: [
+            {
+              role: 'system',
+              content: 'You are an expert resume parser. Output ONLY valid JSON matching the exact requested JSON structure based on facts in the candidate resume text. Do not invent or hallucinate facts.',
+            },
+            {
+              role: 'user',
+              content: `${parsePrompt}\n\nCandidate Document Text:\n${truncatedText}`,
+            },
+          ],
+          temperature: 0.1,
+        }),
+      });
+
+      if (res.ok) {
+        const data: any = await res.json();
+        const content = data.choices?.[0]?.message?.content;
+        if (content) {
+          try {
+            const cleaned = content.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/\s*```$/, '').trim();
+            const json = JSON.parse(cleaned);
+            if (json && (json.name || json.skills || json.projects || json.education || json.experiences)) {
+              console.log(`✅ Groq API successfully parsed candidate resume with model ${model}! Candidate Name: ${json.name || 'Parsed'}`);
+              return json;
+            }
+          } catch (jsonErr) {
+            console.warn(`Groq JSON parse exception with model ${model}:`, jsonErr);
+          }
+        }
+      } else {
+        const errText = await res.text();
+        console.warn(`Groq API resume parse model ${model} error response:`, errText);
+      }
+    } catch (err) {
+      console.warn(`Groq API resume parse error with model ${model}:`, err);
+    }
+  }
+
+  return null;
+}
+
+// Check and parse resume and personal details PDFs if present
 async function updateProfileFromResumePdfIfNeeded(): Promise<any> {
   const { resumePdfs, personalDetailPdfs } = findCandidatePdfFiles();
 
@@ -576,12 +687,17 @@ async function updateProfileFromResumePdfIfNeeded(): Promise<any> {
 
   lastParsedPdfSignature = currentSignature;
 
-  // Extract text from Personal Details / Information PDFs
+  let resumePdfBuffer: Buffer | null = null;
+  let personalDetailsBuffer: Buffer | null = null;
   let extractedPersonalDetailsText = '';
+  let resumeRawText = '';
+
+  // Extract text from Personal Details / Information PDFs
   for (const pFile of personalDetailPdfs) {
     try {
-      console.log(`📄 Found personal details PDF at ${pFile.path}. Reading and parsing...`);
+      console.log(`📄 Found personal details PDF at ${pFile.path}. Reading...`);
       const buffer = fs.readFileSync(pFile.path);
+      personalDetailsBuffer = buffer;
       const parsedText = await extractTextFromPdfBuffer(buffer);
       if (parsedText.trim()) {
         extractedPersonalDetailsText += `\n--- Document: ${pFile.name} ---\n${parsedText.trim()}\n`;
@@ -592,13 +708,12 @@ async function updateProfileFromResumePdfIfNeeded(): Promise<any> {
   }
 
   // Extract text from Resume PDF if present
-  let resumeRawText = '';
   if (resumePdfs.length > 0) {
     const targetPdfPath = resumePdfs[0].path;
     try {
       console.log(`📄 Found local resume PDF at ${targetPdfPath}. Reading...`);
-      const pdfBuffer = fs.readFileSync(targetPdfPath);
-      resumeRawText = await extractTextFromPdfBuffer(pdfBuffer);
+      resumePdfBuffer = fs.readFileSync(targetPdfPath);
+      resumeRawText = await extractTextFromPdfBuffer(resumePdfBuffer);
     } catch (e) {
       console.warn(`Could not read resume PDF ${resumePdfs[0].path}:`, e);
     }
@@ -607,22 +722,19 @@ async function updateProfileFromResumePdfIfNeeded(): Promise<any> {
   // Combine text from all available PDF documents
   const combinedRawText = [resumeRawText, extractedPersonalDetailsText].filter(Boolean).join('\n\n--- Extra Information / Personal Details ---\n\n');
 
-  if (combinedRawText.trim()) {
-    try {
-      const socialExtracted = extractSocialUrls(combinedRawText);
-      let parsedProfile: any = null;
-      const ai = getGeminiClient();
+  try {
+    const socialExtracted = extractSocialUrls(combinedRawText);
+    let parsedProfile: any = null;
 
-      if (ai) {
-        const parsePrompt = `You are an expert resume parser. Parse this resume and candidate information text into a structured JSON profile:
+    const parsePrompt = `You are an expert resume parser. Parse the provided candidate document(s) into a structured JSON profile:
 
-${combinedRawText.slice(0, 15000)}
-
-CRITICAL INSTRUCTIONS:
-1. "bio": Extract ONLY the Professional Summary / Profile Summary paragraph from the text. Do NOT include GitHub URLs, LinkedIn URLs, location text, phone numbers, email addresses, or page numbers in the "bio" field.
-2. "education": MUST extract ALL Education entries (Degrees, Universities/Colleges/Schools, Field of Study, Duration/Years, CGPA or Score). Do NOT skip the Education section if present in the text!
-3. "skills": Extract ONLY skills, languages, frameworks, databases, and tools explicitly written in the provided document text. Do NOT add or invent external skills.
-4. Extract name, title, contact details, experiences, projects, achievements accurately.
+CRITICAL ACCURACY INSTRUCTIONS:
+1. Parse ONLY facts explicitly written in the provided candidate document(s). Do NOT hallucinate or inject outside/unrelated projects, skills, degrees, or experience.
+2. "bio": Extract ONLY the Professional Summary / Profile Summary paragraph. Do NOT include URLs, location, phone, email, or page numbers in "bio".
+3. "education": MUST extract ALL Education entries (Degree, Institution, Field, Duration, CGPA/Score).
+4. "skills": Extract ONLY technical skills, programming languages, frameworks, databases, and tools written in the document.
+5. "projects": Extract ALL projects written in the candidate's resume/document with their exact titles, tech stack, and descriptions.
+6. "experiences": Extract ALL work experience / internships written in the document.
 
 Return strictly JSON matching this structure:
 {
@@ -682,10 +794,48 @@ Return strictly JSON matching this structure:
   "achievements": ["..."]
 }`;
 
+    // 1. Primary Method: Try Groq API directly for resume parsing
+    if (combinedRawText && process.env.GROQ_API_KEY && process.env.GROQ_API_KEY !== 'your_groq_api_key_here') {
+      parsedProfile = await callGroqForResumeParse(parsePrompt, combinedRawText);
+    }
+
+    // 2. Secondary Method: Fallback to Gemini AI if Groq was not configured or returned invalid output
+    if (!parsedProfile || !parsedProfile.name) {
+      const ai = getGeminiClient();
+      if (ai) {
+        const contentsParts: any[] = [];
+
+        // Pass PDF binary directly to Gemini as multimodal inlineData parts
+        if (resumePdfBuffer) {
+          contentsParts.push({
+            inlineData: {
+              mimeType: 'application/pdf',
+              data: resumePdfBuffer.toString('base64'),
+            },
+          });
+        }
+
+        if (personalDetailsBuffer) {
+          contentsParts.push({
+            inlineData: {
+              mimeType: 'application/pdf',
+              data: personalDetailsBuffer.toString('base64'),
+            },
+          });
+        }
+
+        if (combinedRawText && combinedRawText.trim()) {
+          contentsParts.push({
+            text: `Raw Extracted Document Text:\n${combinedRawText.slice(0, 12000)}`,
+          });
+        }
+
+        contentsParts.push({ text: parsePrompt });
+
         try {
           const geminiRes = await ai.models.generateContent({
             model: 'gemini-3.6-flash',
-            contents: [{ role: 'user', parts: [{ text: parsePrompt }] }],
+            contents: [{ role: 'user', parts: contentsParts }],
             config: { responseMimeType: 'application/json' },
           });
 
@@ -693,167 +843,162 @@ Return strictly JSON matching this structure:
             parsedProfile = JSON.parse(geminiRes.text);
           }
         } catch (aiErr) {
-          console.warn('Gemini AI parsing failed, falling back to text extraction:', aiErr);
+          console.warn('Gemini AI multimodal resume parsing failed:', aiErr);
         }
       }
-
-      if (!parsedProfile || !parsedProfile.name) {
-        parsedProfile = fallbackParseResumeText(combinedRawText, resumePdfs[0]?.name || personalDetailPdfs[0]?.name || 'candidate');
-      }
-
-      // Extract professional summary
-      const extractedSummaryText = extractSummaryFromRawText(combinedRawText);
-      const rawBioCandidate = (parsedProfile.bio && parsedProfile.bio.length > 25 && !parsedProfile.bio.toLowerCase().includes('detailed summary paragraph'))
-        ? parsedProfile.bio
-        : (extractedSummaryText || sahilProfile.bio);
-      const resolvedBio = cleanBioText(rawBioCandidate);
-
-      // Normalize and sanitize projects list from LLM output
-      let rawProjects = parsedProfile.projects || [];
-      if (typeof rawProjects === 'string') {
-        rawProjects = [{ id: 'proj-1', title: 'Resume Project', description: rawProjects, category: 'Full-Stack', techStack: [], highlights: [rawProjects] }];
-      }
-
-      let sanitizedProjects = (Array.isArray(rawProjects) ? rawProjects : []).map((proj: any, idx: number) => {
-        if (typeof proj === 'string') {
-          return {
-            id: `proj-${idx + 1}`,
-            title: `Project ${idx + 1}`,
-            description: proj,
-            techStack: ['Software Engineering'],
-            githubUrl: '',
-            liveUrl: '',
-            category: 'AI & Full-Stack',
-            highlights: [proj],
-          };
-        }
-        return {
-          id: proj.id || `proj-${idx + 1}`,
-          title: proj.title || proj.name || `Project ${idx + 1}`,
-          description: proj.description || proj.summary || 'Project built by candidate.',
-          techStack: Array.isArray(proj.techStack) && proj.techStack.length > 0 ? proj.techStack : (Array.isArray(proj.tech_stack) ? proj.tech_stack : ['Full-Stack', 'Software Development']),
-          githubUrl: ensureAbsoluteUrl(proj.githubUrl || proj.github_url || proj.github || ''),
-          liveUrl: ensureAbsoluteUrl(proj.liveUrl || proj.live_url || ''),
-          category: proj.category || 'AI & Full-Stack',
-          highlights: Array.isArray(proj.highlights) && proj.highlights.length > 0 ? proj.highlights : [proj.description || 'Key technical accomplishment.'],
-        };
-      });
-
-      // Fallback 1: Extract projects directly from combinedRawText if LLM returned 0 projects
-      if (sanitizedProjects.length === 0) {
-        const rawExtracted = extractProjectsFromRawText(combinedRawText);
-        if (rawExtracted.length > 0) {
-          sanitizedProjects = rawExtracted;
-        }
-      }
-
-      // Fallback 2: If still empty, use default candidate projects so the Projects App is NEVER blank!
-      if (sanitizedProjects.length === 0) {
-        sanitizedProjects = sahilProfile.projects as any[];
-      }
-
-      // Resolve education: try LLM parsed array first, then raw text extraction fallback
-      let resolvedEducation: any[] = Array.isArray(parsedProfile.education) ? parsedProfile.education : [];
-      if (resolvedEducation.length === 0) {
-        resolvedEducation = extractEducationFromRawText(combinedRawText);
-      }
-
-      // Sanitize education list
-      resolvedEducation = resolvedEducation.map((edu: any, idx: number) => {
-        if (typeof edu === 'string') {
-          return {
-            id: `edu-${idx + 1}`,
-            degree: edu,
-            institution: 'University / Institution',
-            field: 'Computer Science',
-            duration: '',
-            cgpa: 'N/A',
-            scoreLabel: 'CGPA',
-            highlights: [edu],
-          };
-        }
-        return {
-          id: edu.id || `edu-${idx + 1}`,
-          degree: edu.degree || edu.name || edu.qualification || 'Degree',
-          institution: edu.institution || edu.university || edu.college || edu.school || 'University',
-          field: edu.field || edu.major || edu.stream || '',
-          duration: edu.duration || edu.years || edu.year || '',
-          cgpa: edu.cgpa || edu.gpa || edu.score || edu.percentage || 'N/A',
-          scoreLabel: edu.scoreLabel || 'CGPA',
-          highlights: Array.isArray(edu.highlights) && edu.highlights.length > 0 ? edu.highlights : [edu.degree || 'Academic Qualification'],
-        };
-      });
-
-      // Use parsed values or fall back to sahilProfile verified personal details
-      const rawLoc = parsedProfile.location || '';
-      const resolvedLocation = rawLoc && !rawLoc.includes('City, Country') && !rawLoc.toLowerCase().includes('not specified') ? rawLoc : sahilProfile.location;
-      
-      const parsedGh = parsedProfile.github || '';
-      let resolvedGithub = '';
-      if (parsedGh && parsedGh.includes('github.com') && !parsedGh.includes('github.com/...')) {
-        resolvedGithub = ensureAbsoluteUrl(parsedGh);
-      } else if (socialExtracted.github) {
-        resolvedGithub = socialExtracted.github;
-      } else {
-        resolvedGithub = sahilProfile.github;
-      }
-
-      const parsedLi = parsedProfile.linkedin || '';
-      let resolvedLinkedin = '';
-      if (parsedLi && parsedLi.includes('linkedin.com') && !parsedLi.includes('linkedin.com/in/...')) {
-        resolvedLinkedin = ensureAbsoluteUrl(parsedLi);
-      } else if (socialExtracted.linkedin) {
-        resolvedLinkedin = socialExtracted.linkedin;
-      } else {
-        resolvedLinkedin = sahilProfile.linkedin;
-      }
-
-      const resolvedEmail = parsedProfile.email && parsedProfile.email.includes('@') ? parsedProfile.email : sahilProfile.email;
-      const resolvedPhone = parsedProfile.phone && parsedProfile.phone.length > 6 ? parsedProfile.phone : sahilProfile.phone;
-
-      activeCandidateProfile = {
-        name: parsedProfile.name && parsedProfile.name !== 'Candidate' ? parsedProfile.name : sahilProfile.name,
-        title: parsedProfile.title || sahilProfile.title,
-        location: resolvedLocation,
-        email: resolvedEmail,
-        phone: resolvedPhone,
-        github: resolvedGithub,
-        linkedin: resolvedLinkedin,
-        portfolio: ensureAbsoluteUrl(parsedProfile.portfolio || sahilProfile.portfolio),
-        avatarUrl: sahilProfile.avatarUrl,
-        totalExperienceYears: parsedProfile.totalExperienceYears !== undefined ? parsedProfile.totalExperienceYears : sahilProfile.totalExperienceYears,
-        bio: resolvedBio,
-        resumeRawText: combinedRawText,
-        skills: (() => {
-          const rawSk = parsedProfile.skills || {};
-          const lang = Array.isArray(rawSk.languages) ? rawSk.languages : [];
-          const fram = Array.isArray(rawSk.frameworks) ? rawSk.frameworks : [];
-          const aiml = Array.isArray(rawSk.aiMl) ? rawSk.aiMl : (Array.isArray(rawSk.ai_ml) ? rawSk.ai_ml : []);
-          const db = Array.isArray(rawSk.databases) ? rawSk.databases : [];
-          const tools = Array.isArray(rawSk.tools) ? rawSk.tools : [];
-          
-          const totalCount = lang.length + fram.length + aiml.length + db.length + tools.length;
-          if (totalCount === 0) {
-            return extractSkillsFromRawText(combinedRawText);
-          }
-          return {
-            languages: lang,
-            frameworks: fram,
-            aiMl: aiml,
-            databases: db,
-            tools: tools,
-          };
-        })(),
-        experiences: Array.isArray(parsedProfile.experiences) ? parsedProfile.experiences : [],
-        projects: sanitizedProjects,
-        education: resolvedEducation,
-        achievements: Array.isArray(parsedProfile.achievements) ? parsedProfile.achievements : [],
-        personalDetails: extractedPersonalDetailsText || sahilProfile.personalDetails,
-      };
-      console.log(`✅ Successfully loaded candidate profile for ${activeCandidateProfile.name}! GitHub: ${activeCandidateProfile.github}, LinkedIn: ${activeCandidateProfile.linkedin}`);
-    } catch (err) {
-      console.warn('Error reading or parsing candidate PDF documents:', err);
     }
+
+    if (!parsedProfile || !parsedProfile.name) {
+      parsedProfile = fallbackParseResumeText(combinedRawText, resumePdfs[0]?.name || personalDetailPdfs[0]?.name || 'candidate');
+    }
+
+    // Extract professional summary
+    const extractedSummaryText = extractSummaryFromRawText(combinedRawText);
+    const rawBioCandidate = (parsedProfile.bio && parsedProfile.bio.length > 25 && !parsedProfile.bio.toLowerCase().includes('detailed summary paragraph'))
+      ? parsedProfile.bio
+      : (extractedSummaryText || '');
+    const resolvedBio = cleanBioText(rawBioCandidate);
+
+    // Normalize and sanitize projects list from LLM output
+    let rawProjects = parsedProfile.projects || [];
+    if (typeof rawProjects === 'string') {
+      rawProjects = [{ id: 'proj-1', title: 'Resume Project', description: rawProjects, category: 'Full-Stack', techStack: [], highlights: [rawProjects] }];
+    }
+
+    let sanitizedProjects = (Array.isArray(rawProjects) ? rawProjects : []).map((proj: any, idx: number) => {
+      if (typeof proj === 'string') {
+        return {
+          id: `proj-${idx + 1}`,
+          title: `Project ${idx + 1}`,
+          description: proj,
+          techStack: ['Software Engineering'],
+          githubUrl: '',
+          liveUrl: '',
+          category: 'AI & Full-Stack',
+          highlights: [proj],
+        };
+      }
+      return {
+        id: proj.id || `proj-${idx + 1}`,
+        title: proj.title || proj.name || `Project ${idx + 1}`,
+        description: proj.description || proj.summary || 'Project built by candidate.',
+        techStack: Array.isArray(proj.techStack) && proj.techStack.length > 0 ? proj.techStack : (Array.isArray(proj.tech_stack) ? proj.tech_stack : ['Full-Stack', 'Software Development']),
+        githubUrl: ensureAbsoluteUrl(proj.githubUrl || proj.github_url || proj.github || ''),
+        liveUrl: ensureAbsoluteUrl(proj.liveUrl || proj.live_url || ''),
+        category: proj.category || 'AI & Full-Stack',
+        highlights: Array.isArray(proj.highlights) && proj.highlights.length > 0 ? proj.highlights : [proj.description || 'Key technical accomplishment.'],
+      };
+    });
+
+    // Fallback 1: Extract projects directly from combinedRawText if LLM returned 0 projects
+    if (sanitizedProjects.length === 0 && combinedRawText) {
+      const rawExtracted = extractProjectsFromRawText(combinedRawText);
+      if (rawExtracted.length > 0) {
+        sanitizedProjects = rawExtracted;
+      }
+    }
+
+    // Resolve education
+    let resolvedEducation: any[] = Array.isArray(parsedProfile.education) ? parsedProfile.education : [];
+    if (resolvedEducation.length === 0 && combinedRawText) {
+      resolvedEducation = extractEducationFromRawText(combinedRawText);
+    }
+
+    // Sanitize education list
+    resolvedEducation = resolvedEducation.map((edu: any, idx: number) => {
+      if (typeof edu === 'string') {
+        return {
+          id: `edu-${idx + 1}`,
+          degree: edu,
+          institution: 'University / Institution',
+          field: 'Computer Science',
+          duration: '',
+          cgpa: 'N/A',
+          scoreLabel: 'CGPA',
+          highlights: [edu],
+        };
+      }
+      return {
+        id: edu.id || `edu-${idx + 1}`,
+        degree: edu.degree || edu.name || edu.qualification || 'Degree',
+        institution: edu.institution || edu.university || edu.college || edu.school || 'University',
+        field: edu.field || edu.major || edu.stream || '',
+        duration: edu.duration || edu.years || edu.year || '',
+        cgpa: edu.cgpa || edu.gpa || edu.score || edu.percentage || 'N/A',
+        scoreLabel: edu.scoreLabel || 'CGPA',
+        highlights: Array.isArray(edu.highlights) && edu.highlights.length > 0 ? edu.highlights : [edu.degree || 'Academic Qualification'],
+      };
+    });
+
+    // Use parsed values
+    const rawLoc = parsedProfile.location || '';
+    const resolvedLocation = rawLoc && !rawLoc.includes('City, Country') && !rawLoc.toLowerCase().includes('not specified') ? rawLoc : (sahilProfile.location || 'Location Not Specified');
+    
+    const parsedGh = parsedProfile.github || '';
+    let resolvedGithub = '';
+    if (parsedGh && parsedGh.includes('github.com') && !parsedGh.includes('github.com/...')) {
+      resolvedGithub = ensureAbsoluteUrl(parsedGh);
+    } else if (socialExtracted.github) {
+      resolvedGithub = socialExtracted.github;
+    } else {
+      resolvedGithub = sahilProfile.github;
+    }
+
+    const parsedLi = parsedProfile.linkedin || '';
+    let resolvedLinkedin = '';
+    if (parsedLi && parsedLi.includes('linkedin.com') && !parsedLi.includes('linkedin.com/in/...')) {
+      resolvedLinkedin = ensureAbsoluteUrl(parsedLi);
+    } else if (socialExtracted.linkedin) {
+      resolvedLinkedin = socialExtracted.linkedin;
+    } else {
+      resolvedLinkedin = sahilProfile.linkedin;
+    }
+
+    const resolvedEmail = parsedProfile.email && parsedProfile.email.includes('@') ? parsedProfile.email : sahilProfile.email;
+    const resolvedPhone = parsedProfile.phone && parsedProfile.phone.length > 6 ? parsedProfile.phone : sahilProfile.phone;
+
+    activeCandidateProfile = {
+      name: parsedProfile.name && parsedProfile.name !== 'Candidate' ? parsedProfile.name : sahilProfile.name,
+      title: parsedProfile.title || sahilProfile.title,
+      location: resolvedLocation,
+      email: resolvedEmail,
+      phone: resolvedPhone,
+      github: resolvedGithub,
+      linkedin: resolvedLinkedin,
+      portfolio: ensureAbsoluteUrl(parsedProfile.portfolio || sahilProfile.portfolio),
+      avatarUrl: sahilProfile.avatarUrl,
+      totalExperienceYears: parsedProfile.totalExperienceYears !== undefined ? parsedProfile.totalExperienceYears : sahilProfile.totalExperienceYears,
+      bio: resolvedBio || sahilProfile.bio,
+      resumeRawText: combinedRawText || 'Resume PDF parsed by multimodal Gemini AI.',
+      skills: (() => {
+        const rawSk = parsedProfile.skills || {};
+        const lang = Array.isArray(rawSk.languages) ? rawSk.languages : [];
+        const fram = Array.isArray(rawSk.frameworks) ? rawSk.frameworks : [];
+        const aiml = Array.isArray(rawSk.aiMl) ? rawSk.aiMl : (Array.isArray(rawSk.ai_ml) ? rawSk.ai_ml : []);
+        const db = Array.isArray(rawSk.databases) ? rawSk.databases : [];
+        const tools = Array.isArray(rawSk.tools) ? rawSk.tools : [];
+        
+        const totalCount = lang.length + fram.length + aiml.length + db.length + tools.length;
+        if (totalCount === 0 && combinedRawText) {
+          return extractSkillsFromRawText(combinedRawText);
+        }
+        return {
+          languages: lang,
+          frameworks: fram,
+          aiMl: aiml,
+          databases: db,
+          tools: tools,
+        };
+      })(),
+      experiences: Array.isArray(parsedProfile.experiences) ? parsedProfile.experiences : [],
+      projects: sanitizedProjects.length > 0 ? sanitizedProjects : sahilProfile.projects,
+      education: resolvedEducation,
+      achievements: Array.isArray(parsedProfile.achievements) ? parsedProfile.achievements : [],
+      personalDetails: extractedPersonalDetailsText || activeCandidateProfile.personalDetails,
+    };
+    console.log(`✅ Successfully loaded candidate profile for ${activeCandidateProfile.name}!`);
+  } catch (err) {
+    console.warn('Error reading or parsing candidate PDF documents:', err);
   }
 
   if (extractedPersonalDetailsText) {
