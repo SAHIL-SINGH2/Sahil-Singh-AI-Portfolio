@@ -27,8 +27,8 @@ import {
   Sparkles
 } from 'lucide-react';
 
-// Wallpaper
-import wallpaperImg from './assets/images/windows11_dark_wallpaper.jpg';
+// Wallpaper static path
+const DEFAULT_WALLPAPER = '/wallpaper.jpg';
 
 const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
@@ -549,10 +549,7 @@ export default function App() {
     color: app.color,
   }));
 
-  const wallpaperSrc =
-    typeof wallpaperImg === 'string' && wallpaperImg
-      ? wallpaperImg
-      : (wallpaperImg as any)?.default || '/wallpaper.jpg';
+  const wallpaperSrc = DEFAULT_WALLPAPER;
 
   return (
     <div className="w-screen h-screen overflow-hidden relative select-none font-sans bg-slate-950 flex flex-col justify-between">
