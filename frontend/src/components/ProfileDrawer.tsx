@@ -191,24 +191,26 @@ export const ProfileDrawer: React.FC<ProfileDrawerProps> = ({
           </div>
 
           {/* Work Experience */}
-          <div className="win-card p-4 space-y-3">
-            <h3 className="font-semibold text-gray-900 dark:text-white flex items-center gap-1.5">
-              <Briefcase className="w-4 h-4 text-indigo-500" />
-              Work Experience
-            </h3>
-            {p.experiences.map((exp) => (
-              <div key={exp.id} className="p-3 rounded-lg bg-black/5 dark:bg-white/5 space-y-1.5">
-                <div className="flex items-center justify-between font-semibold text-gray-900 dark:text-white">
-                  <span>{exp.role}</span>
-                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-500/10 text-indigo-500 border border-indigo-500/20">
-                    {exp.type}
-                  </span>
+          {p.experiences && p.experiences.length > 0 && (
+            <div className="win-card p-4 space-y-3">
+              <h3 className="font-semibold text-gray-900 dark:text-white flex items-center gap-1.5">
+                <Briefcase className="w-4 h-4 text-indigo-500" />
+                Work Experience
+              </h3>
+              {p.experiences.map((exp) => (
+                <div key={exp.id} className="p-3 rounded-lg bg-black/5 dark:bg-white/5 space-y-1.5">
+                  <div className="flex items-center justify-between font-semibold text-gray-900 dark:text-white">
+                    <span>{exp.role}</span>
+                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-500/10 text-indigo-500 border border-indigo-500/20">
+                      {exp.type}
+                    </span>
+                  </div>
+                  <div className="text-gray-500 dark:text-gray-400 text-[11px]">{exp.company} • {exp.duration}</div>
+                  <p className="text-gray-600 dark:text-gray-300 leading-relaxed">{exp.description}</p>
                 </div>
-                <div className="text-gray-500 dark:text-gray-400 text-[11px]">{exp.company} • {exp.duration}</div>
-                <p className="text-gray-600 dark:text-gray-300 leading-relaxed">{exp.description}</p>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
 
           {/* Featured Projects */}
           <div className="win-card p-4 space-y-3">

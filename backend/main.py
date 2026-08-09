@@ -188,23 +188,19 @@ def get_loaded_resume() -> Resume:
     # Default fallback profile
     CACHED_RESUME = Resume(
         name="Sahil Singh",
-        email="singhgarage1@gmail.com",
-        total_experience_years=2.5,
+        email="sahilsinghjadaun4@gmail.com",
+        total_experience_years=0.0,
         skills=[
             "Python", "FastAPI", "React 19", "TypeScript", "Groq API",
             "Gemini API", "PyTorch", "LangChain", "Docker", "PostgreSQL", "RAG"
         ],
-        experiences=[
-            Experience(
-                company="TechVentures AI",
-                role="AI & Full-Stack Engineer Intern",
-                duration="Jan 2024 – Present",
-                description="Built high-throughput LLM microservices with FastAPI, Groq API, and React frontend.",
-                skills_used=["Python", "FastAPI", "Groq API", "React", "Docker"]
-            )
+        experiences=[],
+        education=["B.Tech in Computer Engineering (CGPA 8.9/10)"],
+        projects=[
+            "AI Resume & Portfolio Chatbot (Windows 11 UI)",
+            "RAG Document Intelligence Engine",
+            "AI Document Processing & Complaint Management System"
         ],
-        education=["B.Tech in Computer Science & Engineering (CGPA 8.9/10)"],
-        projects=["AI Resume Chatbot with Windows 11 UI", "RAG Document Intelligence Engine"],
         personal_details=personal_details_text or None
     )
     return CACHED_RESUME

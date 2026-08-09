@@ -312,33 +312,43 @@ export const SectionDetailView: React.FC<SectionDetailViewProps> = ({
           </div>
 
           <div className="space-y-4">
-            {p.experiences.map((exp) => (
-              <div key={exp.id} className="bg-slate-900/80 border border-white/10 rounded-2xl p-5 space-y-3 shadow-xl">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/10 pb-3">
-                  <div>
-                    <h3 className="text-base font-bold text-white">{exp.role}</h3>
-                    <div className="text-cyan-400 font-semibold text-xs">
-                      {exp.company} • <span className="text-slate-400">{exp.location}</span>
+            {p.experiences && p.experiences.length > 0 ? (
+              p.experiences.map((exp) => (
+                <div key={exp.id} className="bg-slate-900/80 border border-white/10 rounded-2xl p-5 space-y-3 shadow-xl">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/10 pb-3">
+                    <div>
+                      <h3 className="text-base font-bold text-white">{exp.role}</h3>
+                      <div className="text-cyan-400 font-semibold text-xs">
+                        {exp.company} • <span className="text-slate-400">{exp.location}</span>
+                      </div>
+                    </div>
+                    <span className="text-xs font-bold px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-400/30 self-start sm:self-auto">
+                      {exp.duration}
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-300 leading-relaxed">{exp.description}</p>
+
+                  <div className="pt-2 flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap gap-1.5">
+                      {exp.skillsUsed.map((sk, i) => (
+                        <span key={i} className="text-[10px] px-2.5 py-0.5 rounded-md bg-slate-800 text-cyan-200 border border-cyan-500/20 font-mono">
+                          {sk}
+                        </span>
+                      ))}
                     </div>
                   </div>
-                  <span className="text-xs font-bold px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-400/30 self-start sm:self-auto">
-                    {exp.duration}
-                  </span>
                 </div>
-
-                <p className="text-xs text-slate-300 leading-relaxed">{exp.description}</p>
-
-                <div className="pt-2 flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex flex-wrap gap-1.5">
-                    {exp.skillsUsed.map((sk, i) => (
-                      <span key={i} className="text-[10px] px-2.5 py-0.5 rounded-md bg-slate-800 text-cyan-200 border border-cyan-500/20 font-mono">
-                        {sk}
-                      </span>
-                    ))}
-                  </div>
-                </div>
+              ))
+            ) : (
+              <div className="bg-slate-900/80 border border-white/10 rounded-2xl p-6 text-center text-slate-300 space-y-2 shadow-xl">
+                <Briefcase className="w-8 h-8 text-cyan-400 mx-auto opacity-80" />
+                <h3 className="font-bold text-sm text-white">Undergraduate / Fresher Profile</h3>
+                <p className="text-xs text-slate-400 max-w-md mx-auto">
+                  {p.name} is a Computer Engineering undergraduate focused on building practical AI software applications, full-stack systems, and open-source projects.
+                </p>
               </div>
-            ))}
+            )}
           </div>
         </div>
       );
@@ -510,21 +520,23 @@ export const SectionDetailView: React.FC<SectionDetailViewProps> = ({
             </div>
 
             {/* Section: Work Experience */}
-            <div className="space-y-3">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400 border-b border-slate-200 dark:border-white/10 pb-1">
-                Work Experience
-              </h3>
-              {p.experiences.map((exp) => (
-                <div key={exp.id} className="space-y-1 text-xs">
-                  <div className="flex items-center justify-between font-bold">
-                    <span className="text-slate-900 dark:text-white">{exp.role} — <span className="text-cyan-600 dark:text-cyan-400">{exp.company}</span></span>
-                    <span className="text-slate-500 font-normal">{exp.duration}</span>
+            {p.experiences && p.experiences.length > 0 && (
+              <div className="space-y-3">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400 border-b border-slate-200 dark:border-white/10 pb-1">
+                  Work Experience
+                </h3>
+                {p.experiences.map((exp) => (
+                  <div key={exp.id} className="space-y-1 text-xs">
+                    <div className="flex items-center justify-between font-bold">
+                      <span className="text-slate-900 dark:text-white">{exp.role} — <span className="text-cyan-600 dark:text-cyan-400">{exp.company}</span></span>
+                      <span className="text-slate-500 font-normal">{exp.duration}</span>
+                    </div>
+                    <p className="text-slate-600 dark:text-slate-300 leading-relaxed">{exp.description}</p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 italic">Key Stack: {exp.skillsUsed.join(', ')}</p>
                   </div>
-                  <p className="text-slate-600 dark:text-slate-300 leading-relaxed">{exp.description}</p>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 italic">Key Stack: {exp.skillsUsed.join(', ')}</p>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
 
             {/* Section: Featured Projects */}
             <div className="space-y-3">
