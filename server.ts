@@ -740,11 +740,12 @@ async function callGroqForResumeParse(parsePrompt: string, combinedText: string)
     return null;
   }
 
-  const configuredModel = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
-  const modelsToTry = [configuredModel, 'llama-3.3-70b-versatile', 'openai/gpt-oss-120b', 'llama-3.1-8b-instant', 'gemma2-9b-it', 'mixtral-8x7b-32768'];
+  const targetModel = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+  const modelsToTry = [targetModel];
   const uniqueModels = Array.from(new Set(modelsToTry));
 
-  const truncatedText = combinedText.slice(0, 15000);
+  // Truncate document text to ~4000 chars to avoid Groq TPM (tokens per minute) limit errors
+  const truncatedText = combinedText.slice(0, 4000);
 
   for (const model of uniqueModels) {
     try {
@@ -758,6 +759,8 @@ async function callGroqForResumeParse(parsePrompt: string, combinedText: string)
         body: JSON.stringify({
           model,
           response_format: { type: 'json_object' },
+          max_completion_tokens: 3500,
+          max_tokens: 3500,
           messages: [
             {
               role: 'system',
@@ -1234,8 +1237,8 @@ async function callGroqApi(question: string): Promise<string | null> {
     return null;
   }
   
-  const configuredModel = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
-  const modelsToTry = [configuredModel, 'llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it', 'mixtral-8x7b-32768', 'qwen-2.5-32b'];
+  const targetModel = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+  const modelsToTry = [targetModel];
   const uniqueModels = Array.from(new Set(modelsToTry));
 
   const profile = await updateProfileFromResumePdfIfNeeded();
@@ -1251,6 +1254,8 @@ async function callGroqApi(question: string): Promise<string | null> {
         },
         body: JSON.stringify({
           model,
+          max_completion_tokens: 1500,
+          max_tokens: 1500,
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: question },
@@ -1446,8 +1451,8 @@ async function callGroqForJobMatch(promptText: string): Promise<any | null> {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey || apiKey === 'your_groq_api_key_here') return null;
 
-  const configuredModel = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
-  const modelsToTry = [configuredModel, 'llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it', 'mixtral-8x7b-32768'];
+  const targetModel = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+  const modelsToTry = [targetModel];
   const uniqueModels = Array.from(new Set(modelsToTry));
 
   for (const model of uniqueModels) {
@@ -1461,6 +1466,8 @@ async function callGroqForJobMatch(promptText: string): Promise<any | null> {
         body: JSON.stringify({
           model,
           response_format: { type: 'json_object' },
+          max_completion_tokens: 2000,
+          max_tokens: 2000,
           messages: [
             {
               role: 'system',
