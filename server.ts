@@ -579,11 +579,14 @@ function findCandidatePdfFiles() {
     process.cwd(),
     path.join(process.cwd(), 'backend'),
     path.join(process.cwd(), 'frontend', 'public'),
+    path.join(process.cwd(), 'public'),
+    path.join(process.cwd(), 'frontend'),
   ];
 
   const resumePdfs: { path: string; name: string; mtimeMs: number }[] = [];
   const personalDetailPdfs: { path: string; name: string; mtimeMs: number }[] = [];
   const uncategorizedPdfs: { path: string; name: string; mtimeMs: number }[] = [];
+  const visitedPaths = new Set<string>();
 
   for (const dir of directoriesToSearch) {
     if (!fs.existsSync(dir)) continue;
@@ -592,6 +595,9 @@ function findCandidatePdfFiles() {
       for (const file of files) {
         if (!file.toLowerCase().endsWith('.pdf')) continue;
         const fullPath = path.join(dir, file);
+        if (visitedPaths.has(fullPath)) continue;
+        visitedPaths.add(fullPath);
+
         try {
           const stat = fs.statSync(fullPath);
           const fLower = file.toLowerCase();
@@ -605,7 +611,12 @@ function findCandidatePdfFiles() {
             fLower.includes('information') ||
             fLower.includes('info') ||
             fLower.includes('bio') ||
-            fLower.includes('profile')
+            fLower.includes('profile') ||
+            fLower.includes('about') ||
+            fLower.includes('contact') ||
+            fLower.includes('extra') ||
+            fLower.includes('data') ||
+            fLower.includes('background')
           ) {
             personalDetailPdfs.push({ path: fullPath, name: file, mtimeMs: stat.mtimeMs });
           } else {
@@ -624,9 +635,14 @@ function findCandidatePdfFiles() {
   personalDetailPdfs.sort((a, b) => b.mtimeMs - a.mtimeMs);
   uncategorizedPdfs.sort((a, b) => b.mtimeMs - a.mtimeMs);
 
-  // If no explicit "resume" PDF was matched, but there are uncategorized PDFs, use the latest as resume
+  // If no explicit "resume" PDF was matched, pick the first uncategorized PDF as resume
   if (resumePdfs.length === 0 && uncategorizedPdfs.length > 0) {
-    resumePdfs.push(uncategorizedPdfs[0]);
+    resumePdfs.push(uncategorizedPdfs.shift()!);
+  }
+
+  // If no explicit "personal details" PDF was matched, pick the next uncategorized PDF if available
+  if (personalDetailPdfs.length === 0 && uncategorizedPdfs.length > 0) {
+    personalDetailPdfs.push(uncategorizedPdfs.shift()!);
   }
 
   return { resumePdfs, personalDetailPdfs };
