@@ -49,7 +49,7 @@ export const sahilProfile: CandidateProfile = {
       title: "AI Resume & Portfolio Chatbot (Windows 11 UI)",
       description: "A Fluent Windows 11 desktop experience allowing recruiters to interview an AI twin of Sahil. Features real-time streaming, Job Description matcher, interactive PDF resume generation, and profile analytics.",
       techStack: ["React 19", "TypeScript", "FastAPI", "Groq API", "Gemini API", "Express", "CSS Glassmorphism"],
-      githubUrl: "https://github.com/sahilsingh-dev/ai-resume-windows11",
+      githubUrl: "https://github.com/SAHIL-SINGH2",
       liveUrl: "https://sahil-ai-resume.app",
       category: "AI & Full-Stack",
       highlights: [
@@ -63,7 +63,7 @@ export const sahilProfile: CandidateProfile = {
       title: "RAG Document Intelligence Engine",
       description: "Enterprise Retrieval-Augmented Generation platform that indexes complex PDFs, extracts tables/diagrams, and answers natural language queries with verified citations.",
       techStack: ["Python", "FastAPI", "LangChain", "Qdrant", "PyPDF", "React", "Docker"],
-      githubUrl: "https://github.com/sahilsingh-dev/rag-document-ai",
+      githubUrl: "https://github.com/SAHIL-SINGH2",
       category: "AI / ML",
       highlights: [
         "Ingests thousands of multi-page PDF documents in under 10 seconds using parallel chunking.",
@@ -76,7 +76,7 @@ export const sahilProfile: CandidateProfile = {
       title: "Real-time Collaborative Code Workspace",
       description: "A web-based IDE featuring real-time pair programming, operational transformation, syntax checking, and AI-assisted inline code autocompletion.",
       techStack: ["React", "Node.js", "WebSockets", "Monaco Editor", "Express", "Docker"],
-      githubUrl: "https://github.com/sahilsingh-dev/collab-code-workspace",
+      githubUrl: "https://github.com/SAHIL-SINGH2",
       category: "Full-Stack Web",
       highlights: [
         "Supported multi-user real-time cursor sync and lock-free edit synchronization.",

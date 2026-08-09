@@ -78,6 +78,18 @@ def read_pdf(file_path: Path) -> str:
         print(f"Error reading PDF {file_path}: {e}")
         return ""
 
+def sanitize_name(name_str: Optional[str]) -> str:
+    if not name_str:
+        return "Sahil Singh"
+    import re
+    cleaned = re.sub(r'\.(pdf|docx?)$', '', name_str, flags=re.IGNORECASE)
+    cleaned = re.sub(r'[-_]', ' ', cleaned)
+    cleaned = re.sub(r'\b(resume|cv|profile|document|pdf|bio|info|details?|personal|\d+)\b', '', cleaned, flags=re.IGNORECASE).strip()
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    if not cleaned or len(cleaned) < 2 or cleaned.lower() == 'candidate':
+        return "Sahil Singh"
+    return ' '.join(w.capitalize() for w in cleaned.split())
+
 def parse_resume(resume_text: str) -> Resume:
     """Parse raw resume text into structured Resume schema using Groq LLM."""
     if not client or not resume_text:
@@ -86,18 +98,16 @@ def parse_resume(resume_text: str) -> Resume:
     system_prompt = f"""
 You are an expert resume parser.
 
-Extract information from the resume based on its meaning,
-not only based on exact section headings.
+Extract information accurately from the provided resume/document text based on its meaning:
 
 Return ONLY valid JSON matching this schema:
 {json.dumps(resume_schema, indent=2)}
 
 Important rules:
-1. Do not invent information.
-2. If a value is not available, return null.
-3. If a list has no information, return an empty list.
-4. Include internships inside experiences.
-5. Extract skills mentioned across the entire resume.
+1. "name": Extract candidate's real full name (e.g. "Sahil Singh"). DO NOT include "Resume", "Resume 2", "CV", "PDF", or numbers in the name.
+2. "personal_details": Extract exact Professional Summary / Personal Details provided.
+3. Extract all actual skills, education, experiences, and projects written in the document.
+4. Do not invent fake projects or fake github repository URLs.
 """
     try:
         response = client.chat.completions.create(
@@ -110,7 +120,9 @@ Important rules:
         )
         raw_output = response.choices[0].message.content
         data = json.loads(raw_output)
-        return Resume(**data)
+        res = Resume(**data)
+        res.name = sanitize_name(res.name)
+        return res
     except Exception as e:
         print(f"Error parsing resume with Groq: {e}")
         return Resume()

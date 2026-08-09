@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 
 // Wallpaper
-import wallpaperImg from './assets/images/windows11_wallpaper_1786017597542.jpg';
+import wallpaperImg from './assets/images/windows11_dark_wallpaper.jpg';
 
 const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
@@ -657,7 +657,7 @@ export default function App() {
       {/* APP 2: 📄 Resume App Window */}
       <WindowFrame
         id={appWindows.resume.id}
-        title={`${candidateProfile?.name || 'Sahil_Sharma'}_Resume.pdf — Candidate Document Viewer`}
+        title={`${(candidateProfile?.name || 'Sahil_Singh').replace(/\s+/g, '_')}_Resume.pdf — Candidate Document Viewer`}
         icon={appWindows.resume.icon}
         isOpen={appWindows.resume.isOpen}
         isMinimized={appWindows.resume.isMinimized}

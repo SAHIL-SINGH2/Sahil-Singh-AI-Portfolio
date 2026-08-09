@@ -145,7 +145,7 @@ export const SectionDetailView: React.FC<SectionDetailViewProps> = ({
                       <span className="text-[10px] uppercase font-extrabold px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/30">
                         {proj.category || 'AI & Full-Stack'}
                       </span>
-                      {proj.githubUrl && (
+                      {proj.githubUrl && proj.githubUrl.includes('github.com') && !proj.githubUrl.includes('sahilsingh-dev') && (
                         <a
                           href={ensureAbsoluteUrl(proj.githubUrl)}
                           target="_blank"

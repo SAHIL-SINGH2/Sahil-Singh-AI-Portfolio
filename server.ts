@@ -273,6 +273,19 @@ function extractSkillsFromRawText(rawText: string) {
   };
 }
 
+function sanitizeCandidateName(rawName: string): string {
+  if (!rawName) return 'Sahil Singh';
+  let cleaned = rawName.trim();
+  cleaned = cleaned.replace(/\.(pdf|docx?)$/i, '');
+  cleaned = cleaned.replace(/[-_]/g, ' ');
+  cleaned = cleaned.replace(/\b(resume|cv|profile|document|pdf|bio|info|details?|personal|\d+)\b/gi, '').trim();
+  cleaned = cleaned.replace(/\s+/g, ' ').trim();
+  if (!cleaned || cleaned.length < 2 || cleaned.toLowerCase() === 'candidate') {
+    return 'Sahil Singh';
+  }
+  return cleaned.split(' ').map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+}
+
 function cleanBioText(bio: string): string {
   if (!bio) return '';
 
@@ -290,7 +303,7 @@ function cleanBioText(bio: string): string {
   cleaned = cleaned.replace(/(?:github|linkedin|location|email|phone)\s*(?:url)?\s*(?:of\s*[A-Za-z0-9_ ]+)?\s*[:-].*/gi, '');
 
   // 3. Remove header prefix if present
-  cleaned = cleaned.replace(/^(?:professional\s+summary|profile\s+summary|summary|career\s+objective|about\s+me)[:\s\-_]*/i, '');
+  cleaned = cleaned.replace(/^(?:professional\s+summary|profile\s+summary|summary|career\s+objective|about\s+me|personal\s+details)[:\s\-_]*/i, '');
 
   // 4. Trim trailing dashes, pipes, colons, or whitespace
   cleaned = cleaned.replace(/[\s\-_:|]+$/g, '').trim();
@@ -310,7 +323,8 @@ function extractSummaryFromRawText(rawText: string): string {
 
   const summaryHeaders = [
     'professional summary', 'summary', 'profile summary', 'career summary',
-    'career objective', 'about me', 'profile', 'executive summary', 'personal summary'
+    'career objective', 'about me', 'profile', 'executive summary', 'personal summary',
+    'personal details', 'bio'
   ];
 
   const stopHeaders = [
@@ -345,7 +359,19 @@ function extractSummaryFromRawText(rawText: string): string {
     }
   }
 
-  return cleanBioText(summaryLines.join(' ').trim());
+  const extracted = cleanBioText(summaryLines.join(' ').trim());
+  if (extracted.length > 30) return extracted;
+
+  // Fallback: scan lines for any substantial candidate profile summary paragraph
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.length >= 60 && !line.includes('@') && !/github|linkedin|phone|email/i.test(line)) {
+      const candidateBio = cleanBioText(line);
+      if (candidateBio.length >= 30) return candidateBio;
+    }
+  }
+
+  return '';
 }
 
 // Extract education items directly from raw document text if LLM JSON parser missed them
@@ -514,9 +540,12 @@ function extractSocialUrls(text: string) {
 function fallbackParseResumeText(rawText: string, fileName: string) {
   const lines = rawText.split('\n').map((l) => l.trim()).filter(Boolean);
   
-  let name = fileName.replace(/\.pdf$/i, '').replace(/[-_]/g, ' ').trim();
+  let name = sanitizeCandidateName(fileName);
   if (lines.length > 0 && lines[0].length < 40 && !lines[0].includes('@') && !lines[0].toLowerCase().includes('resume')) {
-    name = lines[0];
+    const candidateNameFromText = sanitizeCandidateName(lines[0]);
+    if (candidateNameFromText && candidateNameFromText !== 'Candidate') {
+      name = candidateNameFromText;
+    }
   }
 
   const emailMatch = rawText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
@@ -878,12 +907,16 @@ Return strictly JSON matching this structure:
           highlights: [proj],
         };
       }
+      let gh = ensureAbsoluteUrl(proj.githubUrl || proj.github_url || proj.github || '');
+      if (gh.includes('sahilsingh-dev') || gh.includes('github.com/...')) {
+        gh = '';
+      }
       return {
         id: proj.id || `proj-${idx + 1}`,
         title: proj.title || proj.name || `Project ${idx + 1}`,
         description: proj.description || proj.summary || 'Project built by candidate.',
         techStack: Array.isArray(proj.techStack) && proj.techStack.length > 0 ? proj.techStack : (Array.isArray(proj.tech_stack) ? proj.tech_stack : ['Full-Stack', 'Software Development']),
-        githubUrl: ensureAbsoluteUrl(proj.githubUrl || proj.github_url || proj.github || ''),
+        githubUrl: gh,
         liveUrl: ensureAbsoluteUrl(proj.liveUrl || proj.live_url || ''),
         category: proj.category || 'AI & Full-Stack',
         highlights: Array.isArray(proj.highlights) && proj.highlights.length > 0 ? proj.highlights : [proj.description || 'Key technical accomplishment.'],
@@ -958,7 +991,7 @@ Return strictly JSON matching this structure:
     const resolvedPhone = parsedProfile.phone && parsedProfile.phone.length > 6 ? parsedProfile.phone : sahilProfile.phone;
 
     activeCandidateProfile = {
-      name: parsedProfile.name && parsedProfile.name !== 'Candidate' ? parsedProfile.name : sahilProfile.name,
+      name: sanitizeCandidateName(parsedProfile.name || sahilProfile.name),
       title: parsedProfile.title || sahilProfile.title,
       location: resolvedLocation,
       email: resolvedEmail,
@@ -969,31 +1002,36 @@ Return strictly JSON matching this structure:
       avatarUrl: sahilProfile.avatarUrl,
       totalExperienceYears: parsedProfile.totalExperienceYears !== undefined ? parsedProfile.totalExperienceYears : sahilProfile.totalExperienceYears,
       bio: resolvedBio || sahilProfile.bio,
-      resumeRawText: combinedRawText || 'Resume PDF parsed by multimodal Gemini AI.',
+      resumeRawText: combinedRawText || 'Resume PDF parsed by Groq / Gemini AI.',
       skills: (() => {
         const rawSk = parsedProfile.skills || {};
-        const lang = Array.isArray(rawSk.languages) ? rawSk.languages : [];
-        const fram = Array.isArray(rawSk.frameworks) ? rawSk.frameworks : [];
-        const aiml = Array.isArray(rawSk.aiMl) ? rawSk.aiMl : (Array.isArray(rawSk.ai_ml) ? rawSk.ai_ml : []);
-        const db = Array.isArray(rawSk.databases) ? rawSk.databases : [];
-        const tools = Array.isArray(rawSk.tools) ? rawSk.tools : [];
-        
-        const totalCount = lang.length + fram.length + aiml.length + db.length + tools.length;
-        if (totalCount === 0 && combinedRawText) {
-          return extractSkillsFromRawText(combinedRawText);
+        let lang = Array.isArray(rawSk.languages) ? rawSk.languages : [];
+        let fram = Array.isArray(rawSk.frameworks) ? rawSk.frameworks : [];
+        let aiml = Array.isArray(rawSk.aiMl) ? rawSk.aiMl : (Array.isArray(rawSk.ai_ml) ? rawSk.ai_ml : []);
+        let db = Array.isArray(rawSk.databases) ? rawSk.databases : [];
+        let tools = Array.isArray(rawSk.tools) ? rawSk.tools : [];
+
+        if (combinedRawText) {
+          const extractedSk = extractSkillsFromRawText(combinedRawText);
+          lang = Array.from(new Set([...lang, ...extractedSk.languages]));
+          fram = Array.from(new Set([...fram, ...extractedSk.frameworks]));
+          aiml = Array.from(new Set([...aiml, ...extractedSk.aiMl]));
+          db = Array.from(new Set([...db, ...extractedSk.databases]));
+          tools = Array.from(new Set([...tools, ...extractedSk.tools]));
         }
+
         return {
-          languages: lang,
-          frameworks: fram,
-          aiMl: aiml,
-          databases: db,
-          tools: tools,
+          languages: lang.length > 0 ? lang : sahilProfile.skills.languages,
+          frameworks: fram.length > 0 ? fram : sahilProfile.skills.frameworks,
+          aiMl: aiml.length > 0 ? aiml : sahilProfile.skills.aiMl,
+          databases: db.length > 0 ? db : sahilProfile.skills.databases,
+          tools: tools.length > 0 ? tools : sahilProfile.skills.tools,
         };
       })(),
       experiences: Array.isArray(parsedProfile.experiences) ? parsedProfile.experiences : [],
-      projects: sanitizedProjects.length > 0 ? sanitizedProjects : sahilProfile.projects,
+      projects: sanitizedProjects,
       education: resolvedEducation,
-      achievements: Array.isArray(parsedProfile.achievements) ? parsedProfile.achievements : [],
+      achievements: Array.isArray(parsedProfile.achievements) && parsedProfile.achievements.length > 0 ? parsedProfile.achievements : sahilProfile.achievements,
       personalDetails: extractedPersonalDetailsText || activeCandidateProfile.personalDetails,
     };
     console.log(`✅ Successfully loaded candidate profile for ${activeCandidateProfile.name}!`);
