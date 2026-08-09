@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express';
 import path from 'path';
 import fs from 'fs';
 import dotenv from 'dotenv';
+import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import * as pdfParseModule from 'pdf-parse';
 import { sahilProfile } from './frontend/src/data/candidateData.js';
@@ -69,7 +70,7 @@ async function extractTextFromPdfBuffer(pdfBuffer: Buffer): Promise<string> {
 
   // 3. Try dynamic require if available
   try {
-    const req = typeof require !== 'undefined' ? require : eval('require');
+    const req = typeof require !== 'undefined' ? require : null;
     if (req) {
       const dynamicMod = req('pdf-parse');
       if (typeof dynamicMod === 'function') {
@@ -1308,7 +1309,6 @@ ${profile.achievements && profile.achievements.length > 0 ? `## ACHIEVEMENTS\n` 
 // ------------------- VITE SETUP & LISTEN -------------------
 async function startServer() {
   if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
-    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       root: path.resolve(process.cwd(), 'frontend'),
       server: { middlewareMode: true },
