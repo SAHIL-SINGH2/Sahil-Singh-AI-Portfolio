@@ -1,7 +1,7 @@
 {
   "functions": {
     "api/index.ts": {
-      "includeFiles": ["server.js", "*.pdf", "backend/*.pdf", "backend/**", "public/**", "frontend/public/**"]
+      "includeFiles": ["server.js", "**/*.pdf", "frontend/public/**"]
     }
   },
   "rewrites": [
