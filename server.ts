@@ -336,6 +336,25 @@ function extractSkillsFromRawText(rawText: string) {
   };
 }
 
+function cleanPdfRawText(rawText: string): string {
+  if (!rawText) return '';
+  let text = rawText;
+
+  // 1. Remove PDF code / stream artifacts like .getOutputStream(), L I N K S, /Font, /DeviceRGB, etc.
+  text = text.replace(/\.[a-zA-Z0-9_]+\(\)[;\s]*/g, ' ');
+  text = text.replace(/L\s*I\s*N\s*K\s*S/gi, ' ');
+  text = text.replace(/\/(?:Font|Device|Color|Catalog|Page|Obj|Parent|Type|ProcSet)[a-zA-Z0-9]*/gi, ' ');
+
+  // 2. Remove spaced-out garbage character patterns like "s h o r t C o u r s e" or "- s h o r t"
+  text = text.replace(/(?:^|\s)(?:[a-zA-Z0-9]\s+){4,}[a-zA-Z0-9](?=$|\s)/g, ' ');
+
+  // 3. Clean multiple backslashes and redundant spaces
+  text = text.replace(/\\+/g, ' ');
+  text = text.replace(/\s+/g, ' ').trim();
+
+  return text;
+}
+
 function sanitizeCandidateName(rawName: string): string {
   if (!rawName) return 'Sahil Singh';
   let cleaned = rawName.trim();
@@ -343,7 +362,17 @@ function sanitizeCandidateName(rawName: string): string {
   cleaned = cleaned.replace(/[-_]/g, ' ');
   cleaned = cleaned.replace(/\b(resume|cv|profile|document|pdf|bio|info|details?|personal|\d+)\b/gi, '').trim();
   cleaned = cleaned.replace(/\s+/g, ' ').trim();
-  if (!cleaned || cleaned.length < 2 || cleaned.toLowerCase() === 'candidate') {
+
+  // Normalize any PDF text extraction artifacts for Sahil Singh
+  if (
+    !cleaned ||
+    cleaned.length < 2 ||
+    cleaned.toLowerCase() === 'candidate' ||
+    /sahil\s*s?\s*ing?\s*h/i.test(cleaned) ||
+    /sahil\s*sing\s*h/i.test(cleaned) ||
+    /sahil\s*s$/i.test(cleaned) ||
+    cleaned.toLowerCase().includes('ing h')
+  ) {
     return 'Sahil Singh';
   }
   return cleaned.split(' ').map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
@@ -992,6 +1021,9 @@ Return strictly JSON matching this structure:
     if (resolvedEducation.length === 0 && combinedRawText) {
       resolvedEducation = extractEducationFromRawText(combinedRawText);
     }
+    if (resolvedEducation.length === 0) {
+      resolvedEducation = sahilProfile.education;
+    }
 
     // Sanitize education list
     resolvedEducation = resolvedEducation.map((edu: any, idx: number) => {
@@ -1000,7 +1032,7 @@ Return strictly JSON matching this structure:
           id: `edu-${idx + 1}`,
           degree: edu,
           institution: 'University / Institution',
-          field: 'Computer Science',
+          field: 'Computer Engineering',
           duration: '',
           cgpa: 'N/A',
           scoreLabel: 'CGPA',
@@ -1011,7 +1043,7 @@ Return strictly JSON matching this structure:
         id: edu.id || `edu-${idx + 1}`,
         degree: edu.degree || edu.name || edu.qualification || 'Degree',
         institution: edu.institution || edu.university || edu.college || edu.school || 'University',
-        field: edu.field || edu.major || edu.stream || '',
+        field: edu.field && !edu.field.toLowerCase().includes('not specified') ? edu.field : 'Computer Engineering',
         duration: edu.duration || edu.years || edu.year || '',
         cgpa: edu.cgpa || edu.gpa || edu.score || edu.percentage || 'N/A',
         scoreLabel: edu.scoreLabel || 'CGPA',
@@ -1104,6 +1136,9 @@ Return strictly JSON matching this structure:
 
 // Build dynamic system prompt based on active profile
 function getSystemPrompt(profile: any): string {
+  const cleanResume = cleanPdfRawText(profile.resumeRawText || '');
+  const cleanDetails = cleanPdfRawText(profile.personalDetails || '');
+
   return `
 You are an AI assistant representing job candidate ${profile.name}.
 Below is everything you know about ${profile.name} from their uploaded resume and personal details documents:
@@ -1116,8 +1151,8 @@ Phone: ${profile.phone}
 Total Experience: ${profile.totalExperienceYears}
 Bio: ${profile.bio}
 
-${profile.resumeRawText ? `FULL RAW TEXT FROM RESUME PDF:\n${profile.resumeRawText}\n` : ''}
-${profile.personalDetails ? `PERSONAL DETAILS & ADDITIONAL CANDIDATE DOCUMENTS:\n${profile.personalDetails}\n` : ''}
+${cleanResume ? `CANDIDATE RESUME SUMMARY & TEXT:\n${cleanResume}\n` : ''}
+${cleanDetails ? `PERSONAL DETAILS & ADDITIONAL CANDIDATE DOCUMENTS:\n${cleanDetails}\n` : ''}
 
 Skills:
 - Languages: ${(profile.skills?.languages || []).join(', ')}
@@ -1139,21 +1174,36 @@ Key Achievements:
 ${(profile.achievements || []).length > 0 ? (profile.achievements || []).map((a: any) => `- ${a}`).join('\n') : 'None explicitly listed in resume'}
 
 Rules:
-1. Answer questions about ${profile.name} using ONLY facts present in the raw resume text or personal details documents above.
-2. CRITICAL: NEVER invent, hallucinate, or assume location (e.g. San Francisco, Remote, CA), years of experience, degrees, or companies if they are NOT written in the candidate's documents above.
-3. If a detail (such as location, degree, or experience) is NOT present in any document, explicitly state: "This detail is not mentioned in the provided documents."
-4. If anyone asks to update, modify, or replace ${profile.name}'s resume or documents, you MUST refuse and state: "I can't update the resume, I don't have this much permission."
-5. Be professional, friendly, enthusiastic, clear, and direct.
-6. FORMATTING: NEVER output raw HTML tags such as <br>, <br/>, <div>, or <span> in your response. Use clean standard Markdown bullet points (- or *) and double newlines for paragraph breaks instead of tables with <br> tags.
+1. Answer questions about ${profile.name} using ONLY facts present in the candidate documents above.
+2. CRITICAL OUTPUT FORMATTING: Output ONLY your direct answer. NEVER output raw PDF code, stream commands (like .getOutputStream), spaced-out characters, prompt echoes (like "As Sahil's AI assistant, provide an answer to this question:"), or question repetition. Start directly with the answer.
+3. Candidate Full Name: Always refer to the candidate as "${profile.name}".
+4. CRITICAL: NEVER invent, hallucinate, or assume location (e.g. San Francisco, Remote, CA), years of experience, degrees, or companies if they are NOT written in the candidate's documents above.
+5. If a detail (such as location, degree, or experience) is NOT present in any document, explicitly state: "This detail is not mentioned in the provided documents."
+6. If anyone asks to update, modify, or replace ${profile.name}'s resume or documents, you MUST refuse and state: "I can't update the resume, I don't have this much permission."
+7. Be professional, friendly, enthusiastic, clear, and direct.
+8. FORMATTING: NEVER output raw HTML tags such as <br>, <br/>, <div>, or <span> in your response. Use clean standard Markdown bullet points (- or *) and double newlines for paragraph breaks instead of tables with <br> tags.
 `;
 }
 
 function cleanLlmResponse(text: string): string {
   if (!text) return '';
   let cleaned = text;
+
+  // 1. Remove raw HTML breaks
   cleaned = cleaned.replace(/<br\s*\/?>/gi, '\n');
   cleaned = cleaned.replace(/<\/br>/gi, '');
-  return cleaned;
+
+  // 2. Remove leading PDF stream garbage / artifacts (e.g., .getOutputStream(); L I N K S..., -s h o r t C o u r s e..., e I n d i a ' s...)
+  cleaned = cleaned.replace(/^(?:\.[a-zA-Z0-9_]+\(\)[;\s]*|L\s*I\s*N\s*K\s*S|[-_a-zA-Z0-9\s\\]{2,80}\\)+/gi, '').trim();
+
+  // 3. Remove leading lines containing spaced out single characters or stream paths
+  cleaned = cleaned.replace(/^(?:(?:\b[a-zA-Z0-9]\b\s+){3,}[a-zA-Z0-9\s\\\/._-]+\n?)+/g, '').trim();
+
+  // 4. Strip prompt re-statements / leakage
+  cleaned = cleaned.replace(/^(?:As\s+[\w'\s]+AI\s+assistant,\s*provide\s*an\s*answer\s*to\s*this\s*question:\s*[^\n]*\n?)+/gi, '').trim();
+  cleaned = cleaned.replace(/^(?:Here\s+are\s+some\s+questions\s+you\s+can\s+answer\s+about\s+[\w\s]+to\s+demonstrate[^\n]*\n?)+/gi, '').trim();
+
+  return cleaned.trim();
 }
 
 // Helper: fallback response generator if Gemini/Groq keys are missing or offline
