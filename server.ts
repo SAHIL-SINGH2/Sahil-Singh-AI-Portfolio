@@ -17,6 +17,39 @@ app.use(express.json({ limit: '10mb' }));
 let activeCandidateProfile: CandidateProfile = { ...sahilProfile };
 let lastParsedPdfSignature = '';
 
+// ------------------- STATIC PARSED PROFILE (parse once, reuse forever) -------------------
+// scripts/parse-resume.mjs parses your resume/personal-details PDFs with Groq ONE TIME and
+// writes the structured result here. If this file exists, the server loads it directly and
+// NEVER calls Groq or re-scans PDFs to build the profile again — every app (Resume, Skills,
+// Projects, Job Match, Chat) reads this exact same data, so nothing is inconsistent, nothing
+// is re-parsed per question, and no extra tokens are spent parsing on every request.
+let staticProfileLoadAttempted = false;
+let staticProfileCache: CandidateProfile | null = null;
+
+function loadStaticParsedProfile(): CandidateProfile | null {
+  if (staticProfileLoadAttempted) return staticProfileCache;
+  staticProfileLoadAttempted = true;
+  try {
+    const staticPath = path.join(process.cwd(), 'frontend', 'src', 'data', 'parsedProfile.json');
+    if (!fs.existsSync(staticPath)) return null;
+    const raw = JSON.parse(fs.readFileSync(staticPath, 'utf-8'));
+    staticProfileCache = {
+      ...sahilProfile,
+      ...raw,
+      skills: { ...sahilProfile.skills, ...(raw.skills || {}) },
+      experiences: Array.isArray(raw.experiences) && raw.experiences.length > 0 ? raw.experiences : sahilProfile.experiences,
+      projects: Array.isArray(raw.projects) && raw.projects.length > 0 ? raw.projects : sahilProfile.projects,
+      education: Array.isArray(raw.education) && raw.education.length > 0 ? raw.education : sahilProfile.education,
+      achievements: Array.isArray(raw.achievements) && raw.achievements.length > 0 ? raw.achievements : sahilProfile.achievements,
+    };
+    console.log(`✅ Loaded static parsed profile for ${staticProfileCache.name} from parsedProfile.json (no Groq parsing needed).`);
+    return staticProfileCache;
+  } catch (e) {
+    console.warn('Could not load static parsedProfile.json, falling back to live PDF parsing:', e);
+    return null;
+  }
+}
+
 // Helper for Groq API primary model engine
 function isGroqConfigured(): boolean {
   const key = process.env.GROQ_API_KEY;
@@ -834,6 +867,14 @@ async function callGroqForResumeParse(parsePrompt: string, combinedText: string)
 
 // Check and parse resume and personal details PDFs if present
 async function updateProfileFromResumePdfIfNeeded(): Promise<any> {
+  // Fast path: a pre-parsed profile committed by scripts/parse-resume.mjs.
+  // No filesystem scan, no PDF read, no Groq call — just reuse it every time.
+  const staticProfile = loadStaticParsedProfile();
+  if (staticProfile) {
+    activeCandidateProfile = staticProfile;
+    return activeCandidateProfile;
+  }
+
   const { resumePdfs, personalDetailPdfs } = findCandidatePdfFiles();
 
   if (resumePdfs.length === 0 && personalDetailPdfs.length === 0) {
@@ -1137,8 +1178,11 @@ Return strictly JSON matching this structure:
 
 // Build dynamic system prompt based on active profile
 function getSystemPrompt(profile: any): string {
-  const cleanResume = cleanPdfRawText(profile.resumeRawText || '');
-  const cleanDetails = cleanPdfRawText(profile.personalDetails || '');
+  // Cap raw text length to control token usage per chat request — the structured
+  // fields below (skills/projects/education/etc.) already cover most questions;
+  // this raw text is only a backstop for details not captured structurally.
+  const cleanResume = cleanPdfRawText(profile.resumeRawText || '').slice(0, 4000);
+  const cleanDetails = cleanPdfRawText(profile.personalDetails || '').slice(0, 2000);
 
   return `
 You are an AI assistant representing job candidate ${profile.name}.
@@ -1179,8 +1223,8 @@ Rules:
 2. CRITICAL - CONCISE, DIRECT ANSWERS: Give only the specific, limited answer that was explicitly asked. Do NOT volunteer extraneous information or list full resume, experience, or skills details unless specifically requested. Answer the prompt directly.
 3. CRITICAL OUTPUT FORMATTING: Output ONLY your direct answer. NEVER output raw PDF code, stream commands (like .getOutputStream), spaced-out characters, prompt echoes (like "As Sahil's AI assistant, provide an answer to this question:"), or question repetition.
 4. Candidate Full Name: Always refer to the candidate as "${profile.name}".
-5. CRITICAL: NEVER invent, hallucinate, or assume details (such as location, years of experience, degrees, or companies) if they are NOT written in the candidate's documents above. Absolutely no false or hallucinated answers.
-6. If a detail (such as location, degree, or experience) is NOT present in any document, explicitly state: "This detail is not mentioned in the provided documents."
+5. CRITICAL: NEVER invent, hallucinate, or assume ANY detail (location, years of experience, degrees, companies, skills, project names, links, dates, numbers) that is not explicitly written in the candidate documents above. If you are not 100% certain a fact appears above, do not state it.
+6. If a detail is NOT present in any document, respond exactly: "This detail is not mentioned in the provided documents." Do not guess, approximate, or fill gaps with generic/plausible-sounding information.
 7. If anyone asks to update, modify, or replace ${profile.name}'s resume or documents, you MUST refuse and state: "I can't update the resume, I don't have this much permission."
 8. Be professional, friendly, enthusiastic, clear, and direct.
 9. FORMATTING: NEVER output raw HTML tags such as <br>, <br/>, <div>, or <span> in your response. Use clean standard Markdown bullet points (- or *) and double newlines for paragraph breaks instead of tables with <br> tags.
@@ -1306,8 +1350,9 @@ async function callGroqApi(question: string): Promise<string | null> {
         },
         body: JSON.stringify({
           model,
-          max_completion_tokens: 800,
-          max_tokens: 800,
+          max_completion_tokens: 700,
+          max_tokens: 700,
+          temperature: 0,
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: question },
