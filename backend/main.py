@@ -16,13 +16,16 @@ load_dotenv()
 groq_api_key = os.getenv("GROQ_API_KEY")
 client = Groq(api_key=groq_api_key) if groq_api_key else None
 
-# Primary: llama-3.1-8b-instant (fast, low tokens per request)
-# Fallback: llama-3.3-70b-versatile (used when 8b-instant hits rate limit)
-# NOTE: GROQ_MODEL env var is NOT used for model selection to prevent legacy
-# values like "openai/gpt-oss-120b" from being picked up from old .env files.
-GROQ_MODEL_PRIMARY   = "llama-3.1-8b-instant"
-GROQ_MODEL_SECONDARY = "llama-3.3-70b-versatile"
-GROQ_MODEL = GROQ_MODEL_PRIMARY  # kept for /health response display only
+# Three-model chain for maximum free-tier capacity.
+# Each model has its own separate rate-limit bucket on Groq free tier.
+# Order: try fastest first, fall back if rate-limited.
+# NOTE: GROQ_MODEL env var is intentionally NOT used — old .env values like
+# "openai/gpt-oss-120b" would break the app if read.
+GROQ_MODEL_PRIMARY   = "llama-3.1-8b-instant"     # fastest, ~6000 TPM free
+GROQ_MODEL_SECONDARY = "llama-3.3-70b-versatile"  # smarter, separate quota
+GROQ_MODEL_TERTIARY  = "gemma2-9b-it"             # Google Gemma, extra quota
+CHAT_MODELS_CHAIN    = [GROQ_MODEL_PRIMARY, GROQ_MODEL_SECONDARY, GROQ_MODEL_TERTIARY]
+GROQ_MODEL = GROQ_MODEL_PRIMARY  # for /health display only
 
 app = FastAPI(
     title="AI Resume Chatbot & Candidate Engine",
@@ -270,9 +273,9 @@ Rules:
 4. If information is NOT available in any provided document, say: "I don't have enough information to answer that based on the provided resume and personal details."
 5. Be professional, clear, enthusiastic, and confident.
 """
-    # Always try 8b-instant first (low token cost), fall back to 70b if rate-limited.
+    # Try all three models in chain — each has its own separate rate limit bucket.
     # Never use env GROQ_MODEL — it may contain a blocked model like openai/gpt-oss-120b.
-    unique_models = [GROQ_MODEL_PRIMARY, GROQ_MODEL_SECONDARY]
+    unique_models = CHAT_MODELS_CHAIN
 
     for model_name in unique_models:
         try:

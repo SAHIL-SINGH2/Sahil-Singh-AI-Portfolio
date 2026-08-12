@@ -33,6 +33,13 @@ let profileBuildStarted = false;
 // llama-3.3-70b-versatile is the PDF PARSE model (higher quality, used once).
 const CHAT_MODEL  = 'llama-3.1-8b-instant';
 const PARSE_MODEL = 'llama-3.3-70b-versatile';
+// Three-model chain for chat: if 8b-instant hits rate limit → try 70b → try gemma2-9b-it
+// All three are free on Groq. This gives ~3x more capacity before hitting built-in fallback.
+const CHAT_MODELS_CHAIN = [
+  'llama-3.1-8b-instant',    // primary: fastest, lowest token cost
+  'llama-3.3-70b-versatile', // secondary: smarter, different rate limit bucket
+  'gemma2-9b-it',            // tertiary: Google Gemma, separate quota entirely
+];
 
 function isGroqConfigured(): boolean {
   const key = process.env.GROQ_API_KEY;
@@ -474,7 +481,7 @@ async function callGroqChat(question: string): Promise<string | null> {
   const profile = profileCache || await buildProfile();
   const systemPrompt = getSystemPrompt(profile);
   // Try chat model first, fall back to parse model if rate limited
-  const modelsToTry = [CHAT_MODEL, PARSE_MODEL];
+  const modelsToTry = CHAT_MODELS_CHAIN;
   for (const model of modelsToTry) {
     try {
       const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -538,7 +545,7 @@ app.get('/api/health', (_req: Request, res: Response) => {
     status: 'ok',
     timestamp: new Date().toISOString(),
     groqConfigured: isGroqConfigured(),
-    chatModel: CHAT_MODEL,
+    chatModels: CHAT_MODELS_CHAIN,
     parseModel: PARSE_MODEL,
     profileCached: !!profileCache,
   });
