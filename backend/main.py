@@ -16,8 +16,13 @@ load_dotenv()
 groq_api_key = os.getenv("GROQ_API_KEY")
 client = Groq(api_key=groq_api_key) if groq_api_key else None
 
-# Recommended Groq model for fast & accurate response
-GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+# Primary: llama-3.1-8b-instant (fast, low tokens per request)
+# Fallback: llama-3.3-70b-versatile (used when 8b-instant hits rate limit)
+# NOTE: GROQ_MODEL env var is NOT used for model selection to prevent legacy
+# values like "openai/gpt-oss-120b" from being picked up from old .env files.
+GROQ_MODEL_PRIMARY   = "llama-3.1-8b-instant"
+GROQ_MODEL_SECONDARY = "llama-3.3-70b-versatile"
+GROQ_MODEL = GROQ_MODEL_PRIMARY  # kept for /health response display only
 
 app = FastAPI(
     title="AI Resume Chatbot & Candidate Engine",
@@ -44,7 +49,7 @@ class Experience(BaseModel):
 
 class Resume(BaseModel):
     name: Optional[str] = "Sahil Singh"
-    email: Optional[str] = "singhgarage1@gmail.com"
+    email: Optional[str] = "sahilsinghjadaun4@gmail.com"
     phone: Optional[str] = None
     total_experience_years: Optional[float] = 2.5
     skills: List[str] = []
@@ -110,13 +115,16 @@ Important rules:
 4. Do not invent fake projects or fake github repository URLs.
 """
     try:
+        # Use 70b for parsing (higher accuracy), 8b for chat (lower tokens per request)
         response = client.chat.completions.create(
-            model=GROQ_MODEL,
+            model=GROQ_MODEL_SECONDARY,  # 70b for parse (higher accuracy, done once)
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Parse the following resume:\n\n{resume_text}"}
+                {"role": "user", "content": f"Parse the following resume:\n\n{resume_text[:5500]}"}
             ],
-            response_format={"type": "json_object"}
+            response_format={"type": "json_object"},
+            max_tokens=1500,
+            temperature=0,
         )
         raw_output = response.choices[0].message.content
         data = json.loads(raw_output)
@@ -262,17 +270,16 @@ Rules:
 4. If information is NOT available in any provided document, say: "I don't have enough information to answer that based on the provided resume and personal details."
 5. Be professional, clear, enthusiastic, and confident.
 """
-    models_to_try = [GROQ_MODEL, "openai/gpt-oss-120b", "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "gemma2-9b-it"]
-    # Filter out duplicates while preserving order
-    unique_models = []
-    for m in models_to_try:
-        if m and m not in unique_models:
-            unique_models.append(m)
+    # Always try 8b-instant first (low token cost), fall back to 70b if rate-limited.
+    # Never use env GROQ_MODEL — it may contain a blocked model like openai/gpt-oss-120b.
+    unique_models = [GROQ_MODEL_PRIMARY, GROQ_MODEL_SECONDARY]
 
     for model_name in unique_models:
         try:
             response = client.chat.completions.create(
                 model=model_name,
+                max_tokens=700,
+                temperature=0,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": question}
@@ -281,9 +288,13 @@ Rules:
             if response.choices and response.choices[0].message.content:
                 return response.choices[0].message.content
         except Exception as e:
+            err_str = str(e)
             print(f"Groq API call error with model {model_name}: {e}")
+            # Only continue to next model for rate-limit errors; break on others
+            if "rate_limit" not in err_str.lower() and "429" not in err_str and "503" not in err_str:
+                break
 
-    # Fallback to intelligent local parser response if Groq is rate limited (429) or offline
+    # Groq unavailable — use built-in fallback answers
     return generate_fallback_answer_py(question, resume)
 
 @app.get("/")

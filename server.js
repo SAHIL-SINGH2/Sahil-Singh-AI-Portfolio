@@ -81,11 +81,11 @@ var sahilProfile = {
   education: [
     {
       id: "edu-1",
-      institution: "Aligarh Muslim University",
+      institution: "Vision Institute of Technology, Aligarh",
       degree: "Bachelor of Technology (B.Tech)",
       field: "Computer Engineering",
-      duration: "2021 \u2013 2025",
-      cgpa: "8.9 / 10.0",
+      duration: "2024 – 2028",
+      cgpa: "N/A",
       scoreLabel: "CGPA",
       highlights: [
         "Pursuing B.Tech with focus on Software Engineering, Artificial Intelligence, and Web Development.",

@@ -103,12 +103,28 @@ export default function App() {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [candidateProfile, setCandidateProfile] = useState<CandidateProfile | undefined>(undefined);
 
+  // Normalise a string that may have PDF spacing artifacts like "s ah il @g mail .c om"
+  const fixSpaced = (s: string) => {
+    if (!s) return s;
+    return s.replace(/\b([a-zA-Z0-9._%+\-@]) (?=[a-zA-Z0-9._%+\-@])/g, (_, c) => c)
+            .replace(/\s{2,}/g, ' ').trim();
+  };
+  const sanitiseProfile = (profile: CandidateProfile): CandidateProfile => ({
+    ...profile,
+    email:    fixSpaced(profile.email || '').replace(/\s+/g, ''),
+    phone:    fixSpaced(profile.phone || '').replace(/\s+/g, ''),
+    github:   fixSpaced(profile.github || '').replace(/\s+/g, ''),
+    linkedin: fixSpaced(profile.linkedin || '').replace(/\s+/g, ''),
+    title:    (!profile.title || profile.title.toLowerCase().includes('not specified'))
+                ? 'AI/ML Engineer' : profile.title,
+  });
+
   // Fetch dynamic candidate profile from backend on mount
   useEffect(() => {
     ApiService.getCandidateInfo()
       .then((profile) => {
         if (profile) {
-          setCandidateProfile(profile);
+          setCandidateProfile(sanitiseProfile(profile));
         }
       })
       .catch((err) => {
